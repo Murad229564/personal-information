@@ -1575,7 +1575,7 @@
       inset: 0;
       background: rgba(0, 0, 0, .58);
       z-index: 1000;
-      overflow-y: auto;
+      overflow: auto;
       padding: 18px 14px;
       justify-content: center;
       align-items: flex-start;
@@ -1587,8 +1587,8 @@
 
     #pvBox {
       background: white;
-      width: 10in;
-      max-width: 99vw;
+      width: 780px;
+      max-width: 95vw;
       border-radius: 5px;
       box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
       overflow: hidden;
@@ -1640,9 +1640,16 @@
     }
 
     #pvContent {
-      padding: 22px 32px 28px;
+      padding: 0;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 13px;
+      overflow: hidden;
+    }
+
+    #pvContent>* {
+      transform: scale(0.68);
+      transform-origin: top left;
+      width: calc(100% / 0.68);
     }
 
     /* ─── TOAST ─── */
@@ -1889,6 +1896,12 @@
       #pvContent {
         padding: 8mm 14mm 12mm !important;
         margin: 0 !important;
+        overflow: visible !important;
+      }
+
+      #pvContent>* {
+        transform: none !important;
+        width: 100% !important;
       }
 
       @page {
@@ -2462,7 +2475,7 @@
           <button class="pv-print" onclick="window.print()"
             style="background:var(--ca);color:#1a1a1a;font-weight:800;padding:6px 18px;border-radius:6px;font-size:12.5px;">🖨
             Print</button>
-          <button class="pv-print" onclick="window.print()"
+          <button class="pv-print" onclick="savePDF()"
             style="background:var(--cg2);color:white;font-weight:700;padding:6px 18px;border-radius:6px;font-size:12.5px;margin-left:4px;">⬇
             Save PDF</button>
           <button class="pv-close" onclick="closePv()" style="margin-left:8px;">✕</button>
@@ -2587,7 +2600,7 @@
     async function addAudit(uid, action, detail) {
       try {
         await _fdb.collection('ji_audit').add({ time: new Date().toISOString(), uid, action, detail });
-      } catch(e) { console.warn('Audit write failed', e); }
+      } catch (e) { console.warn('Audit write failed', e); }
     }
     async function getAudit() {
       const snap = await _fdb.collection('ji_audit').orderBy('time', 'desc').limit(500).get();
@@ -2601,19 +2614,19 @@
         if (d.exists) {
           const s = d.data();
           if (s.branch) localStorage.setItem('inv_branch', s.branch);
-          if (s.addr)   localStorage.setItem('inv_addr',   s.addr);
+          if (s.addr) localStorage.setItem('inv_addr', s.addr);
           if (s.mobile) localStorage.setItem('inv_mobile', s.mobile);
         }
-      } catch(e) { console.warn('Settings load failed', e); }
+      } catch (e) { console.warn('Settings load failed', e); }
     }
     async function saveSharedSettings() {
       try {
         await _fdb.collection('ji_settings').doc('main').set({
           branch: document.getElementById('s_branch').value,
-          addr:   document.getElementById('s_addr').value,
+          addr: document.getElementById('s_addr').value,
           mobile: document.getElementById('s_mobile').value,
         }, { merge: true });
-      } catch(e) { console.warn('Settings save failed', e); }
+      } catch (e) { console.warn('Settings save failed', e); }
     }
 
     /* ── INIT: load all data before showing app ── */
@@ -3059,7 +3072,7 @@
     ═══════════════════════════════════════════ */
     const _o = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
     const _t = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-    function n2w(n) { if (n === 0) return 'Zero'; let s = ''; if (n >= 10000000) { s += n2w(Math.floor(n / 10000000)) + ' Crore '; n %= 10000000; } if (n >= 100000) { s += n2w(Math.floor(n / 100000)) + ' Lakh '; n %= 100000; } if (n >= 1000) { s += n2w(Math.floor(n / 1000)) + ' Thousand '; n %= 1000; } if (n >= 100) { s += _o[Math.floor(n / 100)] + ' Hundred '; n %= 100; } if (n >= 20) { s += _t[Math.floor(n / 10)] + ' '; n %= 10; } if (n > 0) { s += _o[n] + ' '; } return s.trim(); }
+    function n2w(n) { if (n === 0) return 'Zero'; let s = ''; if (n >= 10000000) { s += n2w(Math.floor(n / 10000000)) + ' Crore '; n %= 10000000; } if (n >= 100000) { s += n2w(Math.floor(n / 100000)) + ' Lakh '; n %= 100000; } if (n >= 1000) { s += n2w(Math.floor(n / 1000)) + ' thousand '; n %= 1000; } if (n >= 100) { s += _o[Math.floor(n / 100)] + ' hundred '; n %= 100; } if (n >= 20) { s += _t[Math.floor(n / 10)] + ' '; n %= 10; } if (n > 0) { s += _o[n] + ' '; } return s.trim(); }
 
     /* ═══════════════════════════════════════════
        NEW / CLEAR
@@ -3123,6 +3136,14 @@
         setTimeout(() => { bumpNo(); resetForm(); toast('Ready for new invoice!', 's'); }, 400);
       }
     }
+
+    function savePDF() {
+      const invNo = document.querySelector('#pvContent [data-invno]')?.dataset?.invno || 'Invoice';
+      const oldTitle = document.title;
+      document.title = invNo;
+      window.print();
+      setTimeout(() => { document.title = oldTitle; }, 2000);
+    }
     document.getElementById('pvDim').addEventListener('click', e => { if (e.target === document.getElementById('pvDim')) closePv(); });
 
     function buildInv(snap) {
@@ -3163,10 +3184,10 @@
       renderInvoiceHTML(D);
     }
 
-    function renderInvoiceHTML(D){
+    function renderInvoiceHTML(D) {
 
-  /* ───────────────── PRODUCT ROWS ───────────────── */
-  const irows = (D.items || []).map((it, i) => `
+      /* ───────────────── PRODUCT ROWS ───────────────── */
+      const irows = (D.items || []).map((it, i) => `
     <tr>
       <td style="text-align:center;font-size:14px;font-family:'Segoe UI',Arial,sans-serif;font-weight:400;">${i + 1}</td>
       <td style="font-size:14px;font-family:'Segoe UI',Arial,sans-serif;font-weight:400;">${it.name || ''}</td>
@@ -3177,15 +3198,15 @@
     </tr>
   `).join('');
 
-  /* ───────────────── SUMMARY ROWS ───────────────── */
-  const srows = `
+      /* ───────────────── SUMMARY ROWS ───────────────── */
+      const srows = `
     <tr>
       <td rowspan="4"></td>
 
       <td colspan="3"
           rowspan="4"
           style="
-            font-size:15px;
+            font-size:15.5px;
             font-weight:700;
             text-align:center;
             vertical-align:middle;
@@ -3218,7 +3239,7 @@
 
       <td colspan="3"
           style="
-            font-size:15px;
+            font-size:15.5px;
             font-weight:700;
             text-align:center;
           ">
@@ -3230,7 +3251,7 @@
     </tr>
   `;
 
-  document.getElementById('pvContent').innerHTML = `
+      document.getElementById('pvContent').innerHTML = `
 
   <style>
 
@@ -3252,7 +3273,7 @@
     .invoice-wrap{
       width:11.69in;
       margin:0 auto;
-      padding:4px 0.5in 18px 0.5in;
+      padding:4px 0.52in 18px 0.52in;
       background:#fff;
       box-shadow: none !important;
     }
@@ -3264,7 +3285,7 @@
       }
       .invoice-wrap {
         width: 100%;
-        padding: 0.15in 0.52in 0.5in 0.54in;
+        padding: 0.27in 0.52in 0.5in 0.54in;
         margin: 0;
         box-shadow: none !important;
       }
@@ -3285,11 +3306,12 @@
       border:none !important;
       vertical-align:top;
       padding:0;
+      padding-bottom: 9px;
     }
 
     .branch-title{
-      font-family: Arial, Helvetica, sans-serif;
-      font-size:22.3px;
+      font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+      font-size:22.5px;
       font-weight:700;
       line-height:1.1;
       margin-bottom:6px;
@@ -3306,8 +3328,8 @@
 
     .title-box{
       border:1px solid #000;
-      margin-top:14px;
-      margin-bottom:20px;
+      margin-top:21px;
+      margin-bottom:24px;
     }
 
     .title-box td{
@@ -3318,14 +3340,14 @@
 
     .invoice-title{
       font-family: Arial, Helvetica, sans-serif;
-      font-size:18px;
+      font-size:18.01px;
       font-weight:700;
       line-height:1.2;
     }
 
     .invoice-subtitle{
       font-family: Arial, Helvetica, sans-serif;
-      font-size:13px;
+      font-size:13.01px;
       font-weight:700;
       margin-top:12px;
     }
@@ -3334,9 +3356,9 @@
 
     #tblPrent td{
       border:none;
-      padding:3px 0 3px 6px;
+      padding:4.8px 0 4.8px 6px;
       font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
-      font-size:13px;
+      font-size:14px;
       line-height:1.4;
       font-weight:400;
     }
@@ -3363,23 +3385,23 @@
     #tblSale thead th{
       text-align:center;
       font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
-      font-size:14px;
+      font-size:16px;
       font-weight:700;
     }
 
     /* Column widths */
     #tblSale col.col-sl       { width:6mm;  }
     #tblSale col.col-product  { width:51mm; }
-    #tblSale col.col-barcode  { width:49mm; }
+    #tblSale col.col-barcode  { width:47mm; }
     #tblSale col.col-unit     { width:10mm; }
-    #tblSale col.col-price    { width:43mm; }
-    #tblSale col.col-total    { width:15mm; }
+    #tblSale col.col-price    { width:45mm; }
+    #tblSale col.col-total    { width:16mm; }
 
     /* ───────────────── SUMMARY ───────────────── */
 
     .sum-label{
       font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
-      font-size:14px !important;
+      font-size:16px !important;
       font-weight:700 !important;
       text-align:center;
       white-space:nowrap;
@@ -3410,23 +3432,23 @@
       width:auto;
       min-width:0;
       padding-top:3px;
-      padding-left:2px;
-      padding-right:2px;
-      font-size:15px;
+      padding-left:0;
+      padding-right:0;
+      font-size:15.2px;
       font-weight:700;
       text-align:center;
       white-space:nowrap;
     }
 
     .sig-name{
-      font-size:13px;
+      font-size:13.2px;
       display:block;
       margin-bottom:2px;
     }
 
   </style>
 
-  <div class="invoice-wrap">
+  <div class="invoice-wrap" data-invno="${D.invNo}">
 
     <!-- ───────────────── HEADER ───────────────── -->
 
@@ -3438,7 +3460,7 @@
           <img
             src="https://jeal.jamuna.tech/Assets/lib/CommonUI/images/jamuna-logo.PNG"
             alt="JAMUNA"
-            style="height:62px;width:auto;"
+            style="height:64px;width:auto;"
             onerror="
               this.parentNode.innerHTML=
               '<div style=font-size:30px;font-weight:bold;color:#d00>JAMUNA</div>'
@@ -3516,7 +3538,7 @@
 
     </table>
 
-    <div style="height:44px;"></div>
+    <div style="height:46px;"></div>
 
     <!-- ───────────────── PRODUCT TABLE ───────────────── -->
 
@@ -3576,15 +3598,15 @@
             <span class="sig-title">Approved By</span>
           </td>
 
-          <td style="text-align:center;padding-left:10px;">
+          <td style="text-align:center;padding-left:13.78px;">
             <span class="sig-title">Checked By</span>
           </td>
 
-          <td style="text-align:center;padding-left:20px;">
+          <td style="text-align:center;padding-left:23.78px;">
             <span class="sig-title">Prepared By</span>
           </td>
 
-          <td style="text-align:center;padding-left:30px;">
+          <td style="text-align:center;padding-left:33.78px;">
             <span class="sig-title">Received By</span>
           </td>
 
@@ -3596,7 +3618,7 @@
 
   </div>
   `;
-}
+    }
 
     /* ═══════════════════════════════════════════
        HISTORY — render user's own invoices
@@ -3933,7 +3955,7 @@
         await loadInvs();
         document.getElementById('fbLoadMsg').textContent = 'Loading requests...';
         await loadReqs();
-      } catch(e) {
+      } catch (e) {
         console.error('Firebase init error:', e);
         document.getElementById('fbLoadMsg').textContent = '⚠ Firebase error — check console';
         setTimeout(() => loadDiv.remove(), 3000);
