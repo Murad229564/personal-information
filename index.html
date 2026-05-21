@@ -240,7 +240,9 @@
     #app {
       display: none;
       height: 100vh;
+      max-height: 100vh;
       flex-direction: column;
+      overflow: hidden;
     }
 
     /* TOPBAR */
@@ -495,6 +497,7 @@
       display: flex;
       flex: 1;
       overflow: hidden;
+      min-height: 0;
     }
 
     /* ─── SIDEBAR ─── */
@@ -739,6 +742,8 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      min-height: 0;
+      min-width: 0;
       background: var(--card);
     }
 
@@ -1916,10 +1921,6 @@
         --sw: 0px;
       }
 
-      .sidebar {
-        display: none;
-      }
-
       .topbar-brand {
         width: auto;
         min-width: unset;
@@ -1935,6 +1936,49 @@
 
       .stat-grid {
         grid-template-columns: 1fr 1fr;
+      }
+
+      /* Sidebar — default hidden, slide in হবে */
+      .sidebar {
+        display: flex;
+        position: fixed;
+        top: var(--h);
+        left: 0;
+        bottom: 0;
+        width: 260px;
+        z-index: 400;
+        transform: translateX(-100%);
+        transition: transform .25s ease;
+        box-shadow: 4px 0 20px rgba(0, 0, 0, .18);
+      }
+
+      .sidebar.mob-open {
+        transform: translateX(0);
+      }
+
+      /* Sidebar backdrop */
+      #mobSidebarDim {
+        display: none;
+        position: fixed;
+        inset: 0;
+        top: var(--h);
+        background: rgba(0, 0, 0, .35);
+        z-index: 390;
+      }
+
+      #mobSidebarDim.on {
+        display: block;
+      }
+
+      /* Main full width on mobile */
+      .main {
+        width: 100%;
+      }
+
+      /* Page content scroll on mobile */
+      .page-wrap {
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
       }
     }
   </style>
@@ -1979,9 +2023,15 @@
 
   <!-- ═══════════ APP ═══════════ -->
   <div id="app">
+    <div id="mobSidebarDim" onclick="closeMobSidebar()"></div>
     <!-- TOPBAR — single, clean -->
     <div class="topbar" style="padding:0 12px;gap:8px;align-items:center;">
       <!-- Logo -->
+      <!-- Mobile sidebar toggle — only shows on mobile -->
+      <button id="mobMenuBtn" onclick="toggleMobSidebar()"
+        style="display:none;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:white;font-size:16px;padding:4px 9px;cursor:pointer;flex-shrink:0;">
+        ☰
+      </button>
       <div style="display:flex;flex-direction:column;align-items:flex-start;gap:0;flex-shrink:0;padding:3px 0;">
         <img src="https://jeal.jamuna.tech/Assets/lib/CommonUI/images/jamuna-logo.PNG" alt="Jamuna"
           style="height:26px;object-fit:contain;" onerror="this.style.display='none'">
@@ -2007,11 +2057,18 @@
         <button class="tbtn ghost" onclick="goPage('history')" id="histNavBtn"
           style="border:1px solid rgba(255,255,255,.3);padding:4px 10px;font-size:11.5px;">📂 History</button>
         <span class="db-chip no" id="dbChip">⚫ No DB</span>
-        <label class="tbtn amber" style="cursor:pointer;padding:4px 10px;font-size:11.5px;">📂 Import Excel<input
-            type="file" id="excelFile" accept=".xlsx,.xls" style="display:none" onchange="loadExcel(this)"></label>
+        <label class="tbtn amber" id="importExcelBtn" style="cursor:pointer;padding:4px 10px;font-size:11.5px;">
+          📂 <span id="importExcelLabel">Import Excel</span>
+          <input type="file" id="excelFile" accept=".xlsx,.xls" style="display:none" onchange="loadExcel(this)">
+        </label>
         <button class="tbtn teal" onclick="downloadTemplate()" style="padding:4px 9px;font-size:11.5px;">⬇
           Template</button>
-        <button class="tbtn ghost" onclick="openSettings()" style="padding:4px 9px;font-size:12px;">⚙</button>
+        <div style="position:relative;display:inline-flex;">
+          <button class="tbtn ghost" onclick="openNotifications()" id="notifBtn"
+            style="padding:4px 9px;font-size:13px;">🔔</button>
+          <span id="notifBadge"
+            style="display:none;position:absolute;top:-3px;right:-3px;background:var(--cr);color:white;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;"></span>
+        </div>
         <div class="user-chip" id="userChip" onclick="toggleUD()">
           <span id="userLbl">—</span><span class="rtag" id="roleLbl">user</span>
           <div class="udrop" id="udrop">
@@ -2107,12 +2164,16 @@
           </div>
           <div style="width:1px;height:28px;background:var(--bdr);flex-shrink:0;"></div>
           <!-- Name -->
-          <div style="display:flex;flex-direction:column;gap:2px;flex:1.5;min-width:120px;">
+          <div style="display:flex;flex-direction:column;gap:2px;flex:1.5;min-width:120px;position:relative;">
             <label
               style="font-size:8.5px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.4px;">Name
               <span style="color:var(--cr);">*</span></label>
-            <input type="text" id="custName" placeholder="Full name"
-              style="border:1.5px solid var(--bdr);border-radius:5px;padding:4px 8px;font-size:12.5px;font-family:var(--f);background:var(--inp);width:100%;">
+            <div class="ac-wrap" style="position:relative">
+              <input type="text" id="custName" placeholder="Full name" oninput="onCustName(this)"
+                onfocus="onCustName(this)" onblur="hideCustAC()" onkeydown="acNavCust(event)" autocomplete="off"
+                style="border:1.5px solid var(--bdr);border-radius:5px;padding:4px 8px;font-size:12.5px;font-family:var(--f);background:var(--inp);width:100%;">
+              <div class="ac-list" id="acCustList" style="display:none;position:absolute;z-index:500;width:100%;"></div>
+            </div>
             <div class="ferr" id="custNameErr" style="font-size:8.5px;margin-top:0;">Required.</div>
           </div>
           <!-- Mobile -->
@@ -2386,6 +2447,10 @@
       <h3>⚙ Branch Settings</h3><button class="sp-x" onclick="closeSettings()">✕</button>
     </div>
     <div class="sp-body">
+      <div id="settingsSyncStatus"
+        style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 11px;font-size:11.5px;color:#166534;font-weight:600;margin-bottom:10px;">
+        ✅ Firestore এ synced — সব device এ available
+      </div>
       <div class="sp-sec">Branch Information</div>
       <div class="sp-g">
         <label>Branch Code &amp; Name <span class="admin-lock-tag" id="lockBranch">🔒 Admin Only</span></label>
@@ -2415,6 +2480,45 @@
       <button class="sp-save" onclick="saveSettings()">💾 Save Settings</button>
       <button class="sp-cancel" onclick="closeSettings()">Cancel</button>
     </div>
+  </div>
+  <div class="sp-sec" id="personalDbSection">Personal Product DB</div>
+  <div class="sp-g" id="personalDbInfo" style="font-size:12px;color:var(--txt2);"></div>
+  <button onclick="resetPersonalDB()" id="resetPersonalDbBtn"
+    style="margin-top:6px;width:100%;background:#fef2f2;color:var(--cr);border:1.5px solid #fecaca;border-radius:6px;padding:7px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:var(--f);">
+    🗑 Reset Personal DB (Use Admin Master)
+  </button>
+
+  <!-- ═══════════ NOTIFICATION PANEL ═══════════ -->
+  <div id="notifDim" onclick="closeNotifications()"
+    style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:490;"></div>
+  <div id="notifPanel"
+    style="display:none;position:fixed;top:54px;right:14px;width:340px;max-height:480px;background:white;border-radius:10px;box-shadow:var(--sh2);border:1px solid var(--bdr);z-index:500;flex-direction:column;overflow:hidden;">
+    <div
+      style="padding:12px 14px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:13.5px;font-weight:800;color:var(--txt);">🔔 Notifications</span>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button onclick="markAllRead()"
+          style="font-size:11px;color:var(--c1);background:none;border:none;cursor:pointer;font-weight:600;font-family:var(--f);">Mark
+          all read</button>
+        <button onclick="closeNotifications()"
+          style="background:none;border:none;font-size:16px;cursor:pointer;color:var(--txt2);">✕</button>
+      </div>
+    </div>
+    <!-- Admin broadcast section — only admin sees this -->
+    <div id="broadcastSection"
+      style="display:none;padding:10px 14px;border-bottom:1px solid var(--bdr);background:#f8fafc;">
+      <div
+        style="font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px;">
+        📢 Send Broadcast</div>
+      <textarea id="broadcastMsg" rows="2" placeholder="সব user কে message পাঠান..."
+        style="width:100%;border:1.5px solid var(--bdr);border-radius:6px;padding:7px 9px;font-size:12.5px;font-family:var(--f);color:var(--txt);background:white;resize:none;margin-bottom:6px;"></textarea>
+      <button onclick="sendBroadcast()"
+        style="width:100%;background:var(--c1);color:white;border:none;border-radius:6px;padding:6px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:var(--f);">📢
+        Send to All Users</button>
+    </div>
+    <div id="notifList" style="overflow-y:auto;flex:1;max-height:320px;"></div>
+    <div id="notifEmpty" style="display:none;text-align:center;padding:28px;color:var(--txt3);font-size:13px;">No
+      notifications.</div>
   </div>
 
   <!-- ═══════════ REQUEST MODAL ═══════════ -->
@@ -2613,20 +2717,41 @@
         const d = await _fdb.collection('ji_settings').doc('main').get();
         if (d.exists) {
           const s = d.data();
+          // Branch info
           if (s.branch) localStorage.setItem('inv_branch', s.branch);
           if (s.addr) localStorage.setItem('inv_addr', s.addr);
           if (s.mobile) localStorage.setItem('inv_mobile', s.mobile);
+          // Invoice number settings
+          if (s.invoicePrefix) localStorage.setItem('inv_prefix', s.invoicePrefix);
+          if (s.approvedBy) localStorage.setItem('inv_approved', s.approvedBy);
+          // Invoice counter — Firestore এ যেটা বড় সেটা নেব
+          if (s.lastInvoiceNo) {
+            const localNo = parseInt(localStorage.getItem('inv_lastno') || '0');
+            const firestoreNo = parseInt(s.lastInvoiceNo);
+            if (firestoreNo > localNo) {
+              localStorage.setItem('inv_lastno', firestoreNo);
+            }
+          }
         }
       } catch (e) { console.warn('Settings load failed', e); }
     }
     async function saveSharedSettings() {
       try {
-        await _fdb.collection('ji_settings').doc('main').set({
+        const data = {
           branch: document.getElementById('s_branch').value,
           addr: document.getElementById('s_addr').value,
           mobile: document.getElementById('s_mobile').value,
-        }, { merge: true });
+          invoicePrefix: document.getElementById('s_prefix').value,
+          approvedBy: document.getElementById('s_approved').value,
+          lastInvoiceNo: parseInt(document.getElementById('s_lastno').value) || 123735,
+          updatedAt: new Date().toISOString(),
+          updatedBy: CU?.uid || '?'
+        };
+        await _fdb.collection('ji_settings').doc('main').set(data, { merge: true });
       } catch (e) { console.warn('Settings save failed', e); }
+      // Sync indicator দেখাও
+      const si = document.getElementById('settingsSyncStatus');
+      if (si) { si.style.display = 'block'; setTimeout(() => si.style.display = 'none', 3000); }
     }
 
     /* ── INIT: load all data before showing app ── */
@@ -2708,9 +2833,39 @@
       await loadSharedSettings();
       applySettingsPermissions();
       loadSettings(); setToday();
+      // Firestore থেকে সর্বশেষ invoice number load করে দেখাও
+      try {
+        const settingsDoc = await _fdb.collection('ji_settings').doc('main').get();
+        if (settingsDoc.exists && settingsDoc.data().lastInvoiceNo) {
+          const firestoreNo = parseInt(settingsDoc.data().lastInvoiceNo);
+          const localNo = parseInt(localStorage.getItem('inv_lastno') || '123735');
+          const syncedNo = Math.max(firestoreNo, localNo);
+          localStorage.setItem('inv_lastno', syncedNo);
+          if (document.getElementById('s_lastno')) document.getElementById('s_lastno').value = syncedNo;
+        }
+      } catch (e) { console.warn('Could not sync invoice counter', e); }
       document.getElementById('invoiceNo').value = nextNo();
-      try { const s = localStorage.getItem('jamuna_products'); if (s) { productDB = JSON.parse(s); showDB(); } } catch (e) { }
-      document.getElementById('productRows').innerHTML = '';
+      // প্রথমে localStorage থেকে দেখাও (fast)
+      try {
+        const s = localStorage.getItem('jamuna_products');
+        if (s) { productDB = JSON.parse(s); showDB(); }
+      } catch (e) { }
+
+      // Background এ Firestore থেকে sync করো
+      loadProductsFromFirestore().then(result => {
+        if (!result) return;
+        const label = result.source === 'personal' ? 'Personal DB' : 'Admin Master DB';
+        toast('Product DB loaded: ' + productDB.length + ' products (' + label + ')', 's', 2500);
+      });
+      checkNotifBadge(); // login এর পরে unread count দেখাও
+      handleResize(); // mobile menu button show/hide
+      // Import button label update
+      const importLabel = document.getElementById('importExcelLabel');
+      if (importLabel) {
+        importLabel.textContent = CU?.role === 'admin'
+          ? 'Import Excel (Master DB)'
+          : 'Import Excel (Personal DB)';
+      }
       rowId = 0; addRow(); calc(); goPage('invoice');
     }
 
@@ -2775,25 +2930,56 @@
        SETTINGS
     ═══════════════════════════════════════════ */
     let _reqField = '';
-    function openSettings() { document.getElementById('sPanel').classList.add('open'); document.getElementById('sDim').classList.add('on'); }
+    async function openSettings() {
+      document.getElementById('sPanel').classList.add('open');
+      document.getElementById('sDim').classList.add('on');
+      // Firestore থেকে latest settings load করো
+      try {
+        await loadSharedSettings();
+        loadSettings();
+      } catch (e) { console.warn('Settings refresh failed', e); }
+    }
     function closeSettings() { document.getElementById('sPanel').classList.remove('open'); document.getElementById('sDim').classList.remove('on'); }
     async function saveSettings() {
+      // সব user এর জন্য localStorage এ save
+      ['prefix', 'lastno', 'approved'].forEach(k => {
+        localStorage.setItem('inv_' + k, document.getElementById('s_' + k).value);
+      });
+
       if (CU?.role === 'admin') {
-        ['branch', 'addr', 'mobile'].forEach(k => localStorage.setItem('inv_' + k, document.getElementById('s_' + k).value));
+        // Admin হলে branch info ও localStorage এ save
+        ['branch', 'addr', 'mobile'].forEach(k => {
+          localStorage.setItem('inv_' + k, document.getElementById('s_' + k).value);
+        });
+        // সব কিছু Firestore এ sync করো
         await saveSharedSettings();
-        addAudit(CU.uid, 'SETTINGS', 'Updated branch settings');
+        addAudit(CU.uid, 'SETTINGS', 'Updated all settings (branch + invoice config)');
+        toast('Settings saved & synced to all devices!', 's');
+      } else {
+        toast('Settings saved!', 's');
       }
-      ['prefix', 'lastno', 'approved'].forEach(k => localStorage.setItem('inv_' + k, document.getElementById('s_' + k).value));
-      toast('Settings saved!', 's'); closeSettings();
-      document.getElementById('invoiceNo').value = nextNo(); updatePills();
+
+      closeSettings();
+      document.getElementById('invoiceNo').value = nextNo();
+      updatePills();
     }
     function loadSettings() {
-      const D = { branch: '(10032) Daulatpur Khulna', addr: 'Daulatpur-9202, Khulna city corporation, Khulna.', mobile: '01325050006', prefix: 'SI-DAU-', lastno: '123735', approved: 'Murad Hossain' };
-      Object.keys(D).forEach(k => { const el = document.getElementById('s_' + k); if (el) el.value = localStorage.getItem('inv_' + k) || D[k]; });
-      // Update topbar branch display
+      const D = {
+        branch: '(10032) Daulatpur Khulna',
+        addr: 'Daulatpur-9202, Khulna city corporation, Khulna.',
+        mobile: '01325050006',
+        prefix: 'SI-DAU-',
+        lastno: '123735',
+        approved: 'Murad Hossain'
+      };
+      Object.keys(D).forEach(k => {
+        const el = document.getElementById('s_' + k);
+        if (el) el.value = localStorage.getItem('inv_' + k) || D[k];
+      });
+      // Topbar branch pill update
       const branchVal = localStorage.getItem('inv_branch') || D.branch;
-      const el = document.getElementById('topBranchName'); if (el) el.textContent = 'Created by Murad Hossain';
-      const pb = document.getElementById('pillBranch'); if (pb) pb.textContent = branchVal;
+      const pb = document.getElementById('pillBranch');
+      if (pb) pb.textContent = branchVal;
     }
     const gs = k => (document.getElementById('s_' + k) || {}).value || '';
 
@@ -2895,15 +3081,160 @@
             category: String(r['Product Category'] || r['Category'] || '').trim(),
           })).filter(p => p.name && p.name !== 'Product');
           localStorage.setItem('jamuna_products', JSON.stringify(productDB));
-          showDB(); toast(productDB.length + ' products loaded!', 's');
+          showDB(); toast(productDB.length + ' products loaded! Syncing...', 's');
+          // Firestore এ save করো
+          saveProductsToFirestore();
         } catch (err) { toast('Failed to read Excel.', 'e'); console.error(err); }
       };
       rd.readAsArrayBuffer(file);
     }
     function showDB() {
       const c = document.getElementById('dbChip');
-      c.className = productDB.length > 0 ? 'db-chip ok' : 'db-chip no';
-      c.textContent = productDB.length > 0 ? '🟢 ' + productDB.length + ' products' : '⚫ No DB';
+      if (!productDB.length) {
+        c.className = 'db-chip no';
+        c.textContent = '⚫ No DB';
+        return;
+      }
+      // Personal নাকি Master সেটা localStorage থেকে বোঝো
+      const isAdmin = CU?.role === 'admin';
+      c.className = 'db-chip ok';
+      c.textContent = isAdmin
+        ? '🟢 ' + productDB.length + ' products (Master)'
+        : '🟢 ' + productDB.length + ' products';
+    }
+
+    async function resetPersonalDB() {
+      if (CU?.role === 'admin') { toast('Admin এর Master DB reset করা যাবে না এখান থেকে।', 'w'); return; }
+      cfmShow({
+        icon: '🗑',
+        title: 'Reset Personal DB?',
+        msg: 'আপনার personal product DB delete হবে। Admin এর Master DB ব্যবহার হবে।',
+        okLabel: 'Reset',
+        okColor: 'var(--cr)',
+        cb: async () => {
+          try {
+            // Firestore থেকে user এর chunks delete করো
+            const snap = await _fdb.collection('ji_products')
+              .doc(CU.uid).collection('chunks').get();
+            const batch = _fdb.batch();
+            snap.docs.forEach(d => batch.delete(d.ref));
+            if (snap.docs.length) await batch.commit();
+            await _fdb.collection('ji_products').doc(CU.uid).delete();
+            // localStorage clear
+            localStorage.removeItem('jamuna_products');
+            productDB = [];
+            showDB();
+            // Master DB load করো
+            const result = await loadProductsFromFirestore();
+            if (result) toast('Personal DB reset! Admin Master DB loaded: ' + productDB.length + ' products', 's', 3000);
+            else toast('Personal DB reset! No master DB found.', 'w');
+            addAudit(CU.uid, 'PERSONAL_DB_RESET', 'Personal product DB reset');
+          } catch (e) {
+            toast('Reset failed.', 'e');
+            console.error(e);
+          }
+        }
+      });
+    }
+    async function saveProductsToFirestore() {
+      try {
+        const chunkSize = 200;
+        const chunks = [];
+        for (let i = 0; i < productDB.length; i += chunkSize) {
+          chunks.push(productDB.slice(i, i + chunkSize));
+        }
+
+        const isAdmin = CU?.role === 'admin';
+        // Admin হলে 'master', user হলে নিজের uid তে save
+        const collectionId = isAdmin ? 'master' : CU.uid;
+
+        // আগের chunks delete করো
+        const oldSnap = await _fdb.collection('ji_products')
+          .doc(collectionId).collection('chunks').get();
+        const batch1 = _fdb.batch();
+        oldSnap.docs.forEach(d => batch1.delete(d.ref));
+        if (oldSnap.docs.length) await batch1.commit();
+
+        // নতুন chunks save করো
+        for (let i = 0; i < chunks.length; i++) {
+          await _fdb.collection('ji_products')
+            .doc(collectionId)
+            .collection('chunks')
+            .doc('chunk_' + i)
+            .set({
+              products: chunks[i],
+              chunkIndex: i,
+              totalChunks: chunks.length,
+              updatedAt: new Date().toISOString(),
+              updatedBy: CU?.uid || '?',
+              totalProducts: productDB.length
+            });
+        }
+
+        // Meta info save করো
+        await _fdb.collection('ji_products').doc(collectionId).set({
+          totalProducts: productDB.length,
+          totalChunks: chunks.length,
+          updatedAt: new Date().toISOString(),
+          updatedBy: CU?.uid || '?',
+          owner: collectionId
+        }, { merge: true });
+
+        const label = isAdmin ? 'Master DB' : 'Personal DB';
+        addAudit(CU?.uid || '?', 'PRODUCTS_SYNC', productDB.length + ' products synced (' + label + ')');
+        toast(productDB.length + ' products synced! (' + label + ')', 's');
+      } catch (e) {
+        console.warn('Product sync failed:', e);
+        toast('Local save ok, Firestore sync failed.', 'w');
+      }
+    }
+
+    async function loadProductsFromFirestore() {
+      try {
+        let allProducts = [];
+        let source = '';
+
+        // প্রথমে user এর নিজের DB চেক করো
+        if (CU?.uid) {
+          const userMeta = await _fdb.collection('ji_products').doc(CU.uid).get();
+          if (userMeta.exists && userMeta.data().totalProducts > 0) {
+            const userSnap = await _fdb.collection('ji_products')
+              .doc(CU.uid).collection('chunks')
+              .orderBy('chunkIndex').get();
+            userSnap.docs.forEach(d => {
+              if (d.data().products) allProducts = allProducts.concat(d.data().products);
+            });
+            if (allProducts.length) source = 'personal';
+          }
+        }
+
+        // User এর নিজের DB নেই বা empty — Admin master DB নাও
+        if (!allProducts.length) {
+          const masterMeta = await _fdb.collection('ji_products').doc('master').get();
+          if (masterMeta.exists && masterMeta.data().totalProducts > 0) {
+            const masterSnap = await _fdb.collection('ji_products')
+              .doc('master').collection('chunks')
+              .orderBy('chunkIndex').get();
+            masterSnap.docs.forEach(d => {
+              if (d.data().products) allProducts = allProducts.concat(d.data().products);
+            });
+            if (allProducts.length) source = 'master';
+          }
+        }
+
+        if (!allProducts.length) return false;
+
+        productDB = allProducts;
+        localStorage.setItem('jamuna_products', JSON.stringify(productDB));
+        showDB();
+
+        const label = source === 'personal' ? '(Personal DB)' : '(Admin Master DB)';
+        console.log('✅ Products loaded from Firestore ' + label + ':', productDB.length);
+        return { loaded: true, source };
+      } catch (e) {
+        console.warn('Product load failed:', e);
+        return false;
+      }
     }
     function srch(q) { if (!q || !productDB.length) return []; q = q.toLowerCase(); return productDB.filter(p => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q) || p.barcode.toLowerCase().includes(q)).slice(0, 8); }
     function srchBC(q) { if (!q || !productDB.length) return []; return productDB.filter(p => p.barcode.toLowerCase().includes(q.toLowerCase())).slice(0, 8); }
@@ -2917,6 +3248,85 @@
     }
 
     /* ═══════════════════════════════════════════
+   CUSTOMER AUTOCOMPLETE
+═══════════════════════════════════════════ */
+    let _custAcIdx = -1;
+
+    function getCustomerHistory() {
+      // সব saved invoice থেকে unique customers বের করো
+      const invs = getInvs().filter(x => !x.deleted && x.cName && x.cMob);
+      const map = {};
+      invs.forEach(iv => {
+        const key = iv.cMob; // mobile দিয়ে unique করা হচ্ছে
+        if (!map[key] || new Date(iv.savedAt) > new Date(map[key].savedAt)) {
+          map[key] = { cName: iv.cName, cMob: iv.cMob, cAc: iv.cAc || '', cAddr: iv.cAddr || '', cEmail: iv.cEmail || '', savedAt: iv.savedAt };
+        }
+      });
+      return Object.values(map);
+    }
+
+    function onCustName(inp) {
+      const q = (inp.value || '').trim().toLowerCase();
+      const ac = document.getElementById('acCustList');
+      _custAcIdx = -1;
+      if (!q || q.length < 1) { ac.style.display = 'none'; return; }
+      const results = getCustomerHistory().filter(c =>
+        c.cName.toLowerCase().includes(q) || c.cMob.includes(q)
+      ).slice(0, 7);
+      if (!results.length) { ac.style.display = 'none'; return; }
+      ac.innerHTML = results.map((c, i) => `
+    <div class="ac-item" data-idx="${i}"
+      onmousedown="selectCustomer('${esc(c.cName)}','${esc(c.cMob)}','${esc(c.cAc)}','${esc(c.cAddr)}','${esc(c.cEmail)}')"
+    >
+      <div class="ac-n">${hlCust(c.cName, q)}</div>
+      <div class="ac-d">📱 ${c.cMob}${c.cAddr ? ' · ' + c.cAddr.slice(0, 30) : ''}</div>
+    </div>`).join('');
+      ac.style.display = 'block';
+    }
+
+    function selectCustomer(name, mob, ac, addr, email) {
+      const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+      setVal('custName', name);
+      setVal('custMobile', mob);
+      setVal('custAc', ac);
+      setVal('custAddress', addr);
+      setVal('custEmail', email);
+      document.getElementById('acCustList').style.display = 'none';
+      // validation error clear করো
+      ['custName', 'custMobile'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('err');
+      });
+      ['custNameErr', 'custMobileErr'].forEach(id => document.getElementById(id)?.classList.remove('on'));
+      toast('Customer loaded: ' + name, 's');
+    }
+
+    function hideCustAC() {
+      setTimeout(() => {
+        const ac = document.getElementById('acCustList');
+        if (ac) ac.style.display = 'none';
+      }, 180);
+    }
+
+    function acNavCust(e) {
+      const ac = document.getElementById('acCustList');
+      if (!ac || ac.style.display === 'none') return;
+      const items = ac.querySelectorAll('.ac-item');
+      if (e.key === 'ArrowDown') { e.preventDefault(); _custAcIdx = Math.min(_custAcIdx + 1, items.length - 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); _custAcIdx = Math.max(_custAcIdx - 1, 0); }
+      else if (e.key === 'Enter' && _custAcIdx >= 0) { e.preventDefault(); items[_custAcIdx].dispatchEvent(new MouseEvent('mousedown')); return; }
+      else if (e.key === 'Escape') { ac.style.display = 'none'; return; }
+      else return;
+      items.forEach((el, i) => el.classList.toggle('hi', i === _custAcIdx));
+      items[_custAcIdx]?.scrollIntoView({ block: 'nearest' });
+    }
+
+    function hlCust(t, q) {
+      if (!q) return t;
+      return t.replace(new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi'), '<mark>$1</mark>');
+    }
+
+    /* ═══════════════════════════════════════════
        DATE & INVOICE NO
     ═══════════════════════════════════════════ */
     function setToday() {
@@ -2927,13 +3337,38 @@
     function fmtDate(v) { if (!v) return ''; return new Date(v + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }); }
     function fmtDateShort(v) { if (!v) return ''; const d = new Date(v); return d.toLocaleDateString('en-GB'); }
     function nextNo() { return (gs('prefix') || 'SI-DAU-') + (parseInt(gs('lastno') || '123735') + 1); }
-    function bumpNo() {
+
+    async function bumpNo() {
       const prefix = gs('prefix') || 'SI-DAU-';
-      const n = parseInt((document.getElementById('invoiceNo').value || '').replace(prefix, '')) || parseInt(gs('lastno') || '123735');
-      localStorage.setItem('inv_lastno', n);
-      document.getElementById('s_lastno').value = n;
-      document.getElementById('invoiceNo').value = prefix + (n + 1);
-      updatePills();
+      const currentNo = parseInt((document.getElementById('invoiceNo').value || '').replace(prefix, '')) || parseInt(gs('lastno') || '123735');
+
+      try {
+        // Firestore transaction দিয়ে atomic increment — race condition হবে না
+        const settingsRef = _fdb.collection('ji_settings').doc('main');
+        const newNo = await _fdb.runTransaction(async (tx) => {
+          const doc = await tx.get(settingsRef);
+          let last = currentNo;
+          if (doc.exists && doc.data().lastInvoiceNo) {
+            // Firestore এ যেটা বড় সেটাই নেব — sync এর জন্য
+            last = Math.max(currentNo, parseInt(doc.data().lastInvoiceNo) || currentNo);
+          }
+          const next = last + 1;
+          tx.set(settingsRef, { lastInvoiceNo: next }, { merge: true });
+          return next;
+        });
+
+        localStorage.setItem('inv_lastno', newNo - 1); // lastno = current saved number
+        if (document.getElementById('s_lastno')) document.getElementById('s_lastno').value = newNo - 1;
+        document.getElementById('invoiceNo').value = prefix + newNo;
+        updatePills();
+      } catch (e) {
+        // Firestore fail করলে fallback localStorage এ
+        console.warn('Firestore invoice counter failed, using local:', e);
+        localStorage.setItem('inv_lastno', currentNo);
+        if (document.getElementById('s_lastno')) document.getElementById('s_lastno').value = currentNo;
+        document.getElementById('invoiceNo').value = prefix + (currentNo + 1);
+        updatePills();
+      }
     }
     function updatePills() {
       document.getElementById('pillNo').textContent = document.getElementById('invoiceNo')?.value || '—';
@@ -3078,7 +3513,7 @@
        NEW / CLEAR
     ═══════════════════════════════════════════ */
     function newInvoice() {
-      cfmShow({ icon: '🧾', title: 'New Invoice?', msg: 'Current data will be cleared and a new invoice will be ready.', okLabel: 'Yes, New Invoice', okColor: 'var(--c1)', cb: () => { bumpNo(); resetForm(); toast('New invoice ready.', 's'); } });
+      cfmShow({ icon: '🧾', title: 'New Invoice?', msg: 'Current data will be cleared and a new invoice will be ready.', okLabel: 'Yes, New Invoice', okColor: 'var(--c1)', cb: () => { bumpNo(); resetForm(); toast('New invoice ready.', 's'); closeMobSidebarAfterAction(); } });
     }
     function clearAll() {
       cfmShow({ icon: '🗑️', title: 'Clear All?', msg: 'All form data will be cleared.', okLabel: 'Clear', okColor: 'var(--cr)', cb: () => { resetForm(); toast('Cleared.', 'w'); } });
@@ -3113,18 +3548,24 @@
     }
 
     function confirmSave() {
-      buildInv(null);
-      document.getElementById('pvDim')._wasNew = true;
+      const isEdit = !!_editingInvNo;
+      buildInv(null, isEdit);
+      document.getElementById('pvDim')._wasNew = !isEdit;
+      document.getElementById('pvDim')._wasEdit = isEdit;
       document.getElementById('pvDim').classList.add('on');
       setTimeout(() => {
         successShow({
-          icon: '🎉',
-          title: 'Invoice Saved!',
-          msg: 'Invoice has been saved successfully. Use print button to print.',
+          icon: isEdit ? '✏' : '🎉',
+          title: isEdit ? 'Invoice Updated!' : 'Invoice Saved!',
+          msg: isEdit ? 'Invoice successfully updated.' : 'Invoice saved. Use print button to print.',
           okLabel: 'View Invoice',
           cb: () => { }
         });
       }, 300);
+      if (isEdit) {
+        document.getElementById('editModeBanner')?.remove();
+        _editingInvNo = null;
+      }
     }
 
     function doPreview() { if (!validateForm()) return; buildInv(null); document.getElementById('pvDim').classList.add('on'); }
@@ -3146,7 +3587,7 @@
     }
     document.getElementById('pvDim').addEventListener('click', e => { if (e.target === document.getElementById('pvDim')) closePv(); });
 
-    function buildInv(snap) {
+    function buildInv(snap, isEdit = false) {
       let D;
       if (snap) { D = snap; }
       else {
@@ -3175,10 +3616,32 @@
         D = { branch, addr, bmob, approved, invNo, invDate, invType, custType, cName, cMob, cAc, cAddr, cEmail, items, mrp, disc, discP, due, paid, units, amtW, unitW };
         /* Auto-save snapshot */
         const existing = getInvs();
-        if (!existing.find(x => x.invNo === invNo)) {
+        const existingInv = existing.find(x => x.invNo === invNo);
+        if (!existingInv) {
+          // নতুন invoice
           const invDoc = { ...D, savedAt: new Date().toISOString(), savedBy: CU?.uid || '?', deleted: false, deletedBy: null, deletedAt: null };
-          setInv(invDoc); // fire and forget — non-blocking
+          setInv(invDoc);
           addAudit(CU?.uid || '?', 'INVOICE_CREATE', 'Invoice ' + invNo + ' created for ' + cName);
+        } else if (isEdit) {
+          // Edit history array তৈরি করো
+          const editHistory = existingInv.editHistory || [];
+          // পুরনো (current) data কে snapshot হিসেবে history তে push করো
+          editHistory.push({
+            snapshot: { ...existingInv },
+            editedAt: new Date().toISOString(),
+            editedBy: CU?.uid || '?',
+            editedByName: CU?.name || CU?.uid || '?'
+          });
+          const invDoc = {
+            ...existingInv,
+            ...D,
+            editHistory,                           // history array সহ save
+            editedAt: new Date().toISOString(),
+            editedBy: CU?.uid || '?',
+            editedByName: CU?.name || CU?.uid || '?'
+          };
+          setInv(invDoc);
+          addAudit(CU?.uid || '?', 'INVOICE_EDIT', 'Invoice ' + invNo + ' edited by ' + (CU?.uid || '?') + ' (v' + editHistory.length + ')');
         }
       }
       renderInvoiceHTML(D);
@@ -3663,8 +4126,12 @@
     <td><span class="badge ${iv.deleted ? 'deleted' : 'active'}">${iv.deleted ? 'Deleted' : 'Active'}</span></td>
     <td style="display:flex;gap:4px">
       ${!iv.deleted ? `<button class="xbtn ok" onclick="reprint('${iv.invNo}')">🖨</button>` : ''}
-      ${!iv.deleted ? `<button class="xbtn del" onclick="softDelete('${iv.invNo}')">🗑</button>` : ''}
-      ${iv.deleted && isAdmin ? `<button class="xbtn rst" onclick="restoreInv('${iv.invNo}')">↩</button>` : ''}
+      ${!iv.deleted ? `<button class="xbtn blk" onclick="editInvoice('${iv.invNo}')">✏ Edit</button>` : ''}
+      ${(iv.editHistory && iv.editHistory.length) ? `<button class="xbtn" onclick="showEditHistory('${iv.invNo}')" style="background:#ede9fe;color:#7c3aed;border:1px solid #ddd6fe;font-size:11px;">🕓 ${iv.editHistory.length}</button>` : ''}
+      ${!iv.deleted && isAdmin ? `<button class="xbtn del" onclick="softDelete('${iv.invNo}')">🗑 Delete</button>` : ''}
+      ${!iv.deleted && !isAdmin ? `<button class="xbtn del" onclick="requestDelete('${iv.invNo}')">🗑 Request Delete</button>` : ''}
+      ${iv.deleted && isAdmin ? `<button class="xbtn rst" onclick="restoreInv('${iv.invNo}')">↩ Restore</button>` : ''}
+      ${iv.deleted && !isAdmin ? `<span style="font-size:10.5px;color:var(--txt3);font-style:italic;">⏳ Pending admin</span>` : ''}
     </td>
   </tr>`).join('');
     }
@@ -3682,10 +4149,260 @@
       });
     }
 
+    /* ═══════════════════════════════════════════
+   USER DELETE REQUEST TO ADMIN
+═══════════════════════════════════════════ */
+    async function requestDelete(invNo) {
+      const iv = getInvs().find(x => x.invNo === invNo);
+      if (!iv) { toast('Invoice not found.', 'e'); return; }
+
+      // আগে কোনো pending request আছে কিনা check করো
+      const existing = getReqs().find(r =>
+        r.field === 'DELETE_REQUEST' &&
+        r.invNo === invNo &&
+        r.status === 'pending'
+      );
+      if (existing) {
+        toast('এই invoice এর জন্য আগেই request পাঠানো হয়েছে। Admin এর approval এর অপেক্ষায়।', 'w', 4000);
+        return;
+      }
+
+      showModal('🗑 Delete Request', `
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:10px 13px;margin-bottom:12px;">
+      <div style="font-size:12.5px;font-weight:700;color:#991b1b;margin-bottom:4px;">⚠ Invoice: ${invNo}</div>
+      <div style="font-size:12px;color:#7f1d1d;">Customer: ${iv.cName || '—'} | Paid: ৳${Number(iv.paid || 0).toFixed(2)}</div>
+    </div>
+    <div class="mf">
+      <label style="font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.4px;">Delete করার কারণ লিখুন <span style="color:var(--cr)">*</span></label>
+      <textarea id="delReqReason" rows="3" placeholder="কেন delete করতে চাইছেন বিস্তারিত লিখুন..."
+        style="width:100%;border:1.5px solid var(--bdr);border-radius:6px;padding:8px 10px;font-size:13px;font-family:var(--f);color:var(--txt);background:var(--inp);resize:vertical;margin-top:4px;"></textarea>
+    </div>
+    <div style="font-size:11px;color:var(--txt3);margin-top:6px;">📬 Request টি admin এর কাছে পাঠানো হবে। Admin approve করলে invoice delete হবে।</div>
+  `, async () => {
+        const reason = document.getElementById('delReqReason')?.value?.trim();
+        if (!reason) { toast('কারণ লিখুন।', 'e'); return false; }
+
+        const req = {
+          field: 'DELETE_REQUEST',
+          invNo: invNo,
+          invData: { cName: iv.cName, paid: iv.paid, invDate: iv.invDate },
+          msg: reason,
+          from: CU?.uid || '?',
+          fromName: CU?.name || '?',
+          time: new Date().toISOString(),
+          status: 'pending'
+        };
+        await addReqDoc(req);
+        addAudit(CU.uid, 'DELETE_REQUEST', 'Delete request for invoice ' + invNo + ': ' + reason);
+        toast('Delete request পাঠানো হয়েছে। Admin approve করলে delete হবে।', 's', 4000);
+        return true;
+      });
+    }
+
     function reprint(invNo) {
       const iv = getInvs().find(x => x.invNo === invNo);
       if (!iv) { toast('Not found.', 'e'); return; }
       renderInvoiceHTML(iv); document.getElementById('pvDim').classList.add('on');
+    }
+    /* ═══════════════════════════════════════════
+   INVOICE EDIT / MODIFY
+═══════════════════════════════════════════ */
+    let _editingInvNo = null; // কোন invoice edit হচ্ছে সেটা track করা
+
+    function editInvoice(invNo) {
+      const iv = getInvs().find(x => x.invNo === invNo);
+      if (!iv) { toast('Invoice not found.', 'e'); return; }
+
+      cfmShow({
+        icon: '✏',
+        title: 'Edit Invoice?',
+        msg: `Invoice <strong>${invNo}</strong> edit করবেন?<br><span style="font-size:12px;color:#64748b">Save করলে পুরনো data replace হবে।</span>`,
+        okLabel: 'Yes, Edit',
+        okColor: 'var(--c1)',
+        cb: () => {
+          _editingInvNo = invNo;
+          loadInvoiceToForm(iv);
+          goPage('invoice');
+          toast('✏ Editing: ' + invNo + ' — changes করে Save করুন।', 'w', 5000);
+        }
+      });
+    }
+
+    function showEditHistory(invNo) {
+      const iv = getInvs().find(x => x.invNo === invNo);
+      if (!iv || !iv.editHistory || !iv.editHistory.length) {
+        toast('No edit history found.', 'w'); return;
+      }
+
+      const fmtTime = t => t ? t.slice(0, 16).replace('T', ' ') : '—';
+      const fmtItems = items => (items || []).map(it => `${it.name} × ${it.unit} = ৳${Number(it.total || 0).toFixed(2)}`).join('<br>');
+
+      // Current (latest) version
+      const currentBlock = `
+    <div style="border:2px solid var(--cg);border-radius:8px;padding:10px 13px;margin-bottom:14px;background:#f0fdf4;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <span style="font-size:11.5px;font-weight:800;color:var(--cg2);">✅ Current Version (Latest)</span>
+        <button onclick="previewVersion('${invNo}',null)" style="background:var(--ca);color:#1a1a1a;border:none;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--f);">🖨 Preview</button>
+        <span style="font-size:10.5px;color:var(--txt3);">Edited: ${fmtTime(iv.editedAt)} by <strong>${iv.editedByName || iv.editedBy || '—'}</strong></span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;">
+        <div><span style="color:var(--txt3);">Customer:</span> <strong>${iv.cName || '—'}</strong></div>
+        <div><span style="color:var(--txt3);">Mobile:</span> ${iv.cMob || '—'}</div>
+        <div><span style="color:var(--txt3);">Paid:</span> <strong style="color:var(--cg2);">৳${Number(iv.paid || 0).toFixed(2)}</strong></div>
+        <div><span style="color:var(--txt3);">Due:</span> ৳${Number(iv.due || 0).toFixed(2)}</div>
+      </div>
+      <div style="margin-top:6px;font-size:11.5px;color:var(--txt2);line-height:1.7;">${fmtItems(iv.items)}</div>
+    </div>`;
+
+      // Edit history versions (newest first)
+      const historyBlocks = [...iv.editHistory].reverse().map((h, i) => {
+        const ver = iv.editHistory.length - i;
+        const snap = h.snapshot || {};
+        return `
+      <div style="border:1px solid var(--bdr);border-radius:8px;padding:10px 13px;margin-bottom:10px;background:#fafafa;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:11px;font-weight:700;color:#7c3aed;">🕓 Version ${ver} — Before this edit</span>
+          <button onclick="previewVersion('${invNo}',${iv.editHistory.length - 1 - i})" style="background:#ede9fe;color:#7c3aed;border:1px solid #ddd6fe;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--f);">🖨 Preview</button>
+          <span style="font-size:10.5px;color:var(--txt3);">${fmtTime(h.editedAt)} by <strong>${h.editedByName || h.editedBy || '—'}</strong></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;">
+          <div><span style="color:var(--txt3);">Customer:</span> <strong>${snap.cName || '—'}</strong></div>
+          <div><span style="color:var(--txt3);">Mobile:</span> ${snap.cMob || '—'}</div>
+          <div><span style="color:var(--txt3);">Paid:</span> <strong>৳${Number(snap.paid || 0).toFixed(2)}</strong></div>
+          <div><span style="color:var(--txt3);">Due:</span> ৳${Number(snap.due || 0).toFixed(2)}</div>
+          <div><span style="color:var(--txt3);">Discount:</span> ৳${Number(snap.disc || 0).toFixed(2)}</div>
+          <div><span style="color:var(--txt3);">Total MRP:</span> ৳${Number(snap.mrp || 0).toFixed(2)}</div>
+        </div>
+        <div style="margin-top:6px;font-size:11.5px;color:var(--txt2);line-height:1.7;">${fmtItems(snap.items)}</div>
+      </div>`;
+      }).join('');
+
+      showModal(
+        '🕓 Edit History — ' + invNo,
+        `<div style="max-height:420px;overflow-y:auto;padding-right:4px;">
+      <div style="font-size:11px;color:var(--txt3);margin-bottom:10px;">
+        মোট <strong>${iv.editHistory.length}</strong> বার edit হয়েছে। নিচে সর্বশেষ version থেকে পুরনো version দেখানো হচ্ছে।
+      </div>
+      ${currentBlock}
+      <div style="font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:8px;padding-left:2px;">📂 Previous Versions:</div>
+      ${historyBlocks}
+    </div>`,
+        null
+      );
+      document.getElementById('modalOk').textContent = 'Close';
+      document.getElementById('modalOk').onclick = () => closeModal();
+    }
+
+    function previewVersion(invNo, histIdx) {
+      const iv = getInvs().find(x => x.invNo === invNo);
+      if (!iv) { toast('Invoice not found.', 'e'); return; }
+
+      let data;
+      if (histIdx === null) {
+        // Current version — সরাসরি invoice data
+        data = iv;
+      } else {
+        // পুরনো version — history snapshot থেকে নাও
+        const snap = iv.editHistory[histIdx]?.snapshot;
+        if (!snap) { toast('Version not found.', 'e'); return; }
+        data = snap;
+      }
+
+      // Modal বন্ধ করে preview খোলো
+      closeModal();
+      setTimeout(() => {
+        // Invoice preview এর জন্য দরকারি সব field গুলো নিশ্চিত করো
+        const previewData = {
+          branch: data.branch || gs('branch') || '(10032) Daulatpur Khulna',
+          addr: data.addr || gs('addr') || '',
+          bmob: data.bmob || gs('mobile') || '',
+          approved: data.approved || gs('approved') || '',
+          invNo: data.invNo || invNo,
+          invDate: data.invDate || '',
+          invType: data.invType || '',
+          custType: data.custType || '',
+          cName: data.cName || '',
+          cMob: data.cMob || '',
+          cAc: data.cAc || '',
+          cAddr: data.cAddr || '',
+          cEmail: data.cEmail || '',
+          items: data.items || [],
+          mrp: data.mrp || 0,
+          disc: data.disc || 0,
+          discP: data.discP || 0,
+          due: data.due || 0,
+          paid: data.paid || 0,
+          units: data.units || 0,
+          amtW: data.amtW || n2w(Math.round(data.discP || 0)),
+          unitW: data.unitW || ''
+        };
+        // _wasNew = false রাখো — preview বন্ধ হলে form reset হবে না
+        document.getElementById('pvDim')._wasNew = false;
+        document.getElementById('pvDim')._wasEdit = false;
+        renderInvoiceHTML(previewData);
+        document.getElementById('pvDim').classList.add('on');
+      }, 200);
+    }
+
+    function loadInvoiceToForm(iv) {
+      // Customer info
+      const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+      setVal('custName', iv.cName);
+      setVal('custMobile', iv.cMob);
+      setVal('custAc', iv.cAc);
+      setVal('custAddress', iv.cAddr);
+      setVal('custEmail', iv.cEmail);
+      setVal('invoiceType', iv.invType);
+      setVal('customerType', iv.custType);
+      setVal('discount', iv.disc || 0);
+      setVal('dueAmt', iv.due || 0);
+
+      // Invoice number এবং date
+      document.getElementById('invoiceNo').value = iv.invNo;
+      // invDate টা "May 22, 2026" format এ থাকে, input এর জন্য yyyy-mm-dd দরকার
+      try {
+        const d = new Date(iv.invDate);
+        if (!isNaN(d)) {
+          document.getElementById('invoiceDate').value =
+            d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+      } catch (e) { setToday(); }
+
+      // Product rows clear করে invoice items load করো
+      document.getElementById('productRows').innerHTML = '';
+      rowId = 0;
+      (iv.items || []).forEach(it => addRow(it.name || '', it.barcode || '', it.unit || 1, it.price || ''));
+
+      // Edit mode indicator topbar এ দেখাও
+      updatePills();
+      showEditBanner(iv.invNo);
+      calc();
+    }
+
+    function showEditBanner(invNo) {
+      // আগের banner থাকলে সরাও
+      document.getElementById('editModeBanner')?.remove();
+      const banner = document.createElement('div');
+      banner.id = 'editModeBanner';
+      banner.style.cssText = 'background:#fef3c7;border-bottom:2px solid #f59e0b;padding:6px 16px;font-size:12px;font-weight:700;color:#92400e;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:100;';
+      banner.innerHTML = `
+    <span>✏ Edit Mode — Invoice: <strong>${invNo}</strong> — পরিবর্তন করে Save করুন</span>
+    <button onclick="cancelEdit()" style="background:#ef4444;color:white;border:none;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--f);">✕ Cancel Edit</button>
+  `;
+      // mainInvoice এর আগে insert করো
+      const mainInv = document.getElementById('mainInvoice');
+      if (mainInv) mainInv.insertBefore(banner, mainInv.firstChild);
+    }
+
+    function cancelEdit() {
+      _editingInvNo = null;
+      document.getElementById('editModeBanner')?.remove();
+      // নতুন invoice ready করো
+      const prefix = gs('prefix') || 'SI-DAU-';
+      const lastNo = parseInt(localStorage.getItem('inv_lastno') || '123735');
+      document.getElementById('invoiceNo').value = prefix + (lastNo + 1);
+      resetForm();
+      toast('Edit cancelled. New invoice ready.', 'w');
     }
 
     function exportHistXlsx(all = false) {
@@ -3761,36 +4478,85 @@
       const empty = document.getElementById('reqEmpty');
       if (!reqs.length) { document.getElementById('reqBody').innerHTML = ''; empty.style.display = 'block'; return; }
       empty.style.display = 'none';
-      document.getElementById('reqBody').innerHTML = reqs.map((r, i) => `<tr>
-    <td><strong>${r.from}</strong> (${r.fromName || ''})</td>
-    <td>${r.field || '—'}</td>
-    <td>${r.msg || '—'}</td>
-    <td style="font-size:10.5px;color:var(--txt3)">${(r.time || '').slice(0, 16)}</td>
-    <td><span class="badge ${r.status === 'pending' ? 'pending' : r.status === 'approved' ? 'active' : 'inactive'}">${r.status}</span></td>
-    <td style="display:flex;gap:4px;flex-wrap:wrap">
-      ${r.status === 'pending' ? `
-        <button class="xbtn ok" onclick="resolveReq(${i},'approved')">✔ Approve</button>
-        <button class="xbtn blk" onclick="openReqEdit(${i})">✏ Modify</button>
-        <button class="xbtn del" onclick="resolveReq(${i},'rejected')">✖ Reject</button>
-      `: '<span style="font-size:11px;color:var(--txt3)">' + r.status + '</span>'}
-    </td>
-  </tr>`).join('');
+
+      document.getElementById('reqBody').innerHTML = reqs.map((r, i) => {
+        const isDelete = r.field === 'DELETE_REQUEST';
+
+        const fieldCell = isDelete
+          ? '<span style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;">🗑 Delete Request</span><br><span style="font-size:11px;color:var(--txt2);">Invoice: <strong>' + (r.invNo || '—') + '</strong></span>' + (r.invData ? '<br><span style="font-size:10.5px;color:var(--txt3);">' + (r.invData.cName || '') + ' · ৳' + Number(r.invData.paid || 0).toFixed(2) + '</span>' : '')
+          : (r.field || '—');
+
+        let statusBadge = '';
+        if (r.status === 'pending') statusBadge = '<span class="badge pending">pending</span>';
+        else if (r.status === 'approved') statusBadge = '<span class="badge active">approved</span>';
+        else if (r.status === 'restored') statusBadge = '<span class="badge admin">↩ Restored</span>' + (r.restoredAt ? '<div style="font-size:10px;color:var(--txt3);margin-top:2px;">by ' + (r.restoredBy || '') + ' · ' + r.restoredAt.slice(0, 16).replace('T', ' ') + '</div>' : '');
+        else statusBadge = '<span class="badge inactive">' + r.status + '</span>';
+
+        const actionBtns = r.status === 'pending'
+          ? '<button class="xbtn ok" onclick="resolveReq(' + i + ',\'approved\')">✔ Approve</button><button class="xbtn blk" onclick="openReqEdit(' + i + ')">✏ Modify</button><button class="xbtn del" onclick="resolveReq(' + i + ',\'rejected\')">✖ Reject</button>'
+          : '<span style="font-size:11px;color:var(--txt3);">' + r.status + '</span>';
+
+        return '<tr>'
+          + '<td><strong>' + r.from + '</strong> (' + (r.fromName || '') + ')</td>'
+          + '<td>' + fieldCell + '</td>'
+          + '<td>' + (r.msg || '—') + '</td>'
+          + '<td style="font-size:10.5px;color:var(--txt3)">' + (r.time || '').slice(0, 16) + '</td>'
+          + '<td>' + statusBadge + '</td>'
+          + '<td style="display:flex;gap:4px;flex-wrap:wrap">' + actionBtns + '</td>'
+          + '</tr>';
+      }).join('');
     }
 
     async function resolveReq(idx, action) {
       const pending = getReqs().filter(r => r.status === 'pending');
       const r = pending[idx];
       if (!r) return;
-      r.status = action; r.resolvedAt = new Date().toISOString(); r.resolvedBy = CU.uid;
+      r.status = action;
+      r.resolvedAt = new Date().toISOString();
+      r.resolvedBy = CU.uid;
+
       if (action === 'approved') {
         if (r.field === 'Branch Code & Name') { localStorage.setItem('inv_branch', r.msg); loadSettings(); }
         if (r.field === 'Branch Address') { localStorage.setItem('inv_addr', r.msg); loadSettings(); }
         if (r.field === 'Branch Mobile') { localStorage.setItem('inv_mobile', r.msg); loadSettings(); }
+
+        if (r.field === 'DELETE_REQUEST' && r.invNo) {
+          const iv = getInvs().find(x => x.invNo === r.invNo);
+          if (iv) {
+            iv.deleted = true;
+            iv.deletedBy = r.from;
+            iv.deletedAt = new Date().toISOString();
+            iv.deleteReason = r.msg;
+            iv.deleteApprovedBy = CU.uid;
+            await setInv(iv);
+            addAudit(CU.uid, 'INVOICE_DELETE_APPROVED', 'Delete approved for invoice ' + r.invNo);
+          }
+          await sendNotification(
+            r.from,
+            'delete_approved',
+            'Delete Request Approved',
+            'Invoice ' + r.invNo + ' delete request admin approve করেছেন। Invoice টি trash এ আছে।'
+          );
+        }
       }
+
+      if (action === 'rejected') {
+        if (r.field === 'DELETE_REQUEST' && r.invNo) {
+          await sendNotification(
+            r.from,
+            'delete_rejected',
+            'Delete Request Rejected',
+            'Invoice ' + r.invNo + ' delete request admin reject করেছেন।'
+          );
+        }
+      }
+
       if (r._id) await updateReqDoc(r._id, { status: r.status, resolvedAt: r.resolvedAt, resolvedBy: r.resolvedBy });
       else await loadReqs();
+
       addAudit(CU.uid, 'REQ_' + action.toUpperCase(), 'Request ' + idx + ' ' + action);
-      toast('Request ' + action, 's'); renderAdmReqs();
+      toast('Request ' + action, 's');
+      renderAdmReqs();
     }
 
     function openReqEdit(idx) {
@@ -3824,7 +4590,11 @@
     <td style="font-family:var(--fm)">৳${Number(iv.paid || 0).toFixed(2)}</td>
     <td><span class="badge active">${iv.savedBy || '—'}</span></td>
     <td><span class="badge active">Active</span></td>
-    <td><button class="xbtn ok" onclick="reprint('${iv.invNo}')">🖨</button></td>
+    <td style="display:flex;gap:4px">
+      <button class="xbtn ok" onclick="reprint('${iv.invNo}')">🖨</button>
+      <button class="xbtn blk" onclick="editInvoice('${iv.invNo}')">✏ Edit</button>
+      ${iv.editHistory && iv.editHistory.length ? `<button class="xbtn" onclick="showEditHistory('${iv.invNo}')" style="background:#ede9fe;color:#7c3aed;border:1px solid #ddd6fe;font-size:11px;">🕓 ${iv.editHistory.length}</button>` : ''}
+    </td>
   </tr>`).join('');
     }
 
@@ -3839,7 +4609,11 @@
     <td>${iv.invDate || '—'}</td>
     <td>${iv.cName || '—'}</td>
     <td style="font-family:var(--fm)">৳${Number(iv.paid || 0).toFixed(2)}</td>
-    <td><span class="badge deleted">${iv.deletedBy || '—'}</span></td>
+    <td>
+  <span class="badge deleted">${iv.deletedBy || '—'}</span>
+  ${iv.deleteReason ? `<div style="font-size:10px;color:var(--txt3);margin-top:2px;max-width:140px;white-space:normal;">📝 ${iv.deleteReason.slice(0, 60)}${iv.deleteReason.length > 60 ? '...' : ''}</div>` : ''}
+  ${iv.deleteApprovedBy ? `<div style="font-size:10px;color:var(--cg2);margin-top:1px;">✔ Approved by: ${iv.deleteApprovedBy}</div>` : ''}
+</td>
     <td style="font-size:11px;color:var(--txt3)">${(iv.deletedAt || '').slice(0, 16)}</td>
     <td style="display:flex;gap:4px">
       <button class="xbtn rst" onclick="restoreInv('${iv.invNo}')">↩ Restore</button>
@@ -3851,10 +4625,42 @@
     async function restoreInv(invNo) {
       const iv = getInvs().find(x => x.invNo === invNo);
       if (!iv) return;
-      iv.deleted = false; iv.deletedBy = null; iv.deletedAt = null;
+      const originalOwner = iv.deletedBy || iv.savedBy;
+      iv.deleted = false;
+      iv.restoredAt = new Date().toISOString();
+      iv.restoredBy = CU.uid;
+      // deletedBy, deletedAt রেখে দাও — history এর জন্য
       await setInv(iv);
+
+      // Request tab এ restore mark করো
+      const relatedReqs = getReqs().filter(r =>
+        r.field === 'DELETE_REQUEST' && r.invNo === invNo && r.status === 'approved'
+      );
+      for (const r of relatedReqs) {
+        if (r._id) {
+          await _fdb.collection('ji_requests').doc(r._id).update({
+            status: 'restored',
+            restoredAt: new Date().toISOString(),
+            restoredBy: CU.uid
+          });
+        }
+      }
+      await loadReqs();
+
+      // Invoice owner কে notification পাঠাও
+      if (originalOwner && originalOwner !== CU.uid) {
+        await sendNotification(
+          originalOwner,
+          'restore',
+          '↩ Invoice Restored',
+          'Invoice ' + invNo + ' admin দ্বারা trash থেকে restore করা হয়েছে।'
+        );
+      }
+
       addAudit(CU.uid, 'INVOICE_RESTORE', 'Invoice ' + invNo + ' restored from trash');
-      toast('Invoice restored.', 's'); renderTrash();
+      toast('Invoice restored.', 's');
+      renderTrash();
+      if (document.getElementById('admSection1')?.style.display !== 'none') renderAdmReqs();
     }
 
     function permDelete(invNo) {
@@ -3927,6 +4733,191 @@
     }
 
     /* ═══════════════════════════════════════════
+ NOTIFICATION SYSTEM
+═══════════════════════════════════════════ */
+
+    // Firestore থেকে notifications load করো
+    async function loadNotifications() {
+      try {
+        const snap = await _fdb.collection('ji_notifications')
+          .where('to', 'in', [CU.uid, 'all'])
+          .orderBy('time', 'desc')
+          .limit(50)
+          .get();
+        return snap.docs.map(d => ({ ...d.data(), _id: d.id }));
+      } catch (e) { console.warn('Notif load failed', e); return []; }
+    }
+
+    async function openNotifications() {
+      const panel = document.getElementById('notifPanel');
+      const dim = document.getElementById('notifDim');
+      const isOpen = panel.style.display === 'flex';
+      if (isOpen) { closeNotifications(); return; }
+      panel.style.display = 'flex';
+      dim.style.display = 'block';
+
+      // Admin broadcast section দেখাও
+      const bs = document.getElementById('broadcastSection');
+      if (bs) bs.style.display = CU?.role === 'admin' ? 'block' : 'none';
+
+      await renderNotifications();
+    }
+
+    function closeNotifications() {
+      document.getElementById('notifPanel').style.display = 'none';
+      document.getElementById('notifDim').style.display = 'none';
+    }
+
+    async function renderNotifications() {
+      const list = document.getElementById('notifList');
+      const empty = document.getElementById('notifEmpty');
+      list.innerHTML = '<div style="text-align:center;padding:18px;color:var(--txt3);font-size:12px;">Loading...</div>';
+
+      const notifs = await loadNotifications();
+      if (!notifs.length) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        updateNotifBadge(0);
+        return;
+      }
+      empty.style.display = 'none';
+
+      const unread = notifs.filter(n => !n.readBy?.includes(CU.uid));
+      updateNotifBadge(unread.length);
+
+      list.innerHTML = notifs.map(n => {
+        const isUnread = !n.readBy?.includes(CU.uid);
+        const icon = {
+          'broadcast': '📢',
+          'delete_approved': '✅',
+          'delete_rejected': '❌',
+          'restore': '↩',
+          'system': 'ℹ'
+        }[n.type] || '🔔';
+        return `
+      <div onclick="readNotif('${n._id}',this)" style="padding:11px 14px;border-bottom:1px solid var(--bdr);cursor:pointer;background:${isUnread ? '#eff6ff' : 'white'};transition:background .15s;">
+        <div style="display:flex;align-items:flex-start;gap:8px;">
+          <span style="font-size:17px;flex-shrink:0;">${icon}</span>
+          <div style="flex:1;">
+            <div style="font-size:12.5px;font-weight:${isUnread ? '700' : '500'};color:var(--txt);line-height:1.4;">${n.title || 'Notification'}</div>
+            <div style="font-size:11.5px;color:var(--txt2);margin-top:2px;line-height:1.4;">${n.body || ''}</div>
+            <div style="font-size:10.5px;color:var(--txt3);margin-top:4px;">${(n.time || '').slice(0, 16).replace('T', ' ')}</div>
+          </div>
+          ${isUnread ? '<span style="width:7px;height:7px;background:var(--c1);border-radius:50%;flex-shrink:0;margin-top:4px;"></span>' : ''}
+        </div>
+      </div>`;
+      }).join('');
+    }
+
+    async function readNotif(id, el) {
+      el.style.background = 'white';
+      el.querySelector('span[style*="border-radius:50%"]')?.remove();
+      try {
+        await _fdb.collection('ji_notifications').doc(id).update({
+          readBy: firebase.firestore.FieldValue.arrayUnion(CU.uid)
+        });
+        // badge update
+        const notifs = await loadNotifications();
+        updateNotifBadge(notifs.filter(n => !n.readBy?.includes(CU.uid)).length);
+      } catch (e) { console.warn('Mark read failed', e); }
+    }
+
+    async function markAllRead() {
+      const notifs = await loadNotifications();
+      const unread = notifs.filter(n => !n.readBy?.includes(CU.uid));
+      for (const n of unread) {
+        try {
+          await _fdb.collection('ji_notifications').doc(n._id).update({
+            readBy: firebase.firestore.FieldValue.arrayUnion(CU.uid)
+          });
+        } catch (e) { }
+      }
+      updateNotifBadge(0);
+      await renderNotifications();
+      toast('All marked as read.', 's');
+    }
+
+    function updateNotifBadge(count) {
+      const badge = document.getElementById('notifBadge');
+      if (!badge) return;
+      if (count > 0) {
+        badge.style.display = 'flex';
+        badge.textContent = count > 9 ? '9+' : count;
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    // Notification পাঠানোর helper
+    async function sendNotification(to, type, title, body) {
+      try {
+        await _fdb.collection('ji_notifications').add({
+          to,        // uid অথবা 'all'
+          type,      // broadcast / delete_approved / restore / system
+          title,
+          body,
+          time: new Date().toISOString(),
+          readBy: [],
+          sentBy: CU?.uid || 'system'
+        });
+      } catch (e) { console.warn('Notif send failed', e); }
+    }
+
+    // Admin broadcast
+    async function sendBroadcast() {
+      if (CU?.role !== 'admin') return;
+      const msg = document.getElementById('broadcastMsg')?.value?.trim();
+      if (!msg) { toast('Message লিখুন।', 'e'); return; }
+      await sendNotification('all', 'broadcast', '📢 Admin Message', msg);
+      addAudit(CU.uid, 'BROADCAST', 'Broadcast sent: ' + msg.slice(0, 60));
+      document.getElementById('broadcastMsg').value = '';
+      toast('Broadcast sent to all users!', 's');
+      await renderNotifications();
+    }
+
+    // Login এর পরে badge check করো
+    async function checkNotifBadge() {
+      try {
+        const notifs = await loadNotifications();
+        updateNotifBadge(notifs.filter(n => !n.readBy?.includes(CU.uid)).length);
+      } catch (e) { }
+    }
+
+    /* ═══════════════════════════════════════════
+   MOBILE SIDEBAR
+═══════════════════════════════════════════ */
+    function toggleMobSidebar() {
+      const sb = document.getElementById('sidebar');
+      const dim = document.getElementById('mobSidebarDim');
+      const isOpen = sb.classList.contains('mob-open');
+      if (isOpen) {
+        sb.classList.remove('mob-open');
+        dim.classList.remove('on');
+      } else {
+        sb.classList.add('mob-open');
+        dim.classList.add('on');
+      }
+    }
+
+    function closeMobSidebar() {
+      document.getElementById('sidebar')?.classList.remove('mob-open');
+      document.getElementById('mobSidebarDim')?.classList.remove('on');
+    }
+
+    // Invoice save/clear এর পরে mobile sidebar বন্ধ করো
+    function closeMobSidebarAfterAction() {
+      if (window.innerWidth <= 900) closeMobSidebar();
+    }
+
+    // Screen size অনুযায়ী menu button দেখাও/লুকাও
+    function handleResize() {
+      const btn = document.getElementById('mobMenuBtn');
+      if (!btn) return;
+      btn.style.display = window.innerWidth <= 900 ? 'inline-flex' : 'none';
+    }
+    window.addEventListener('resize', handleResize);
+
+    /* ═══════════════════════════════════════════
        TOAST
     ═══════════════════════════════════════════ */
     function toast(msg, type = 's', ms = 3000) {
@@ -3970,7 +4961,15 @@
         const u = getUsers().find(x => x.uid === sid);
         if (u && u.status === 'active') { CU = u; launchApp(); return; }
       }
-      try { const s = localStorage.getItem('jamuna_products'); if (s) { productDB = JSON.parse(s); } } catch (e) { }
+      // প্রথমে localStorage চেক করো, তারপর Firestore থেকে sync করো
+      try {
+        const s = localStorage.getItem('jamuna_products');
+        if (s) { productDB = JSON.parse(s); showDB(); }
+      } catch (e) { }
+      // Background এ Firestore থেকে latest নাও
+      loadProductsFromFirestore().then(loaded => {
+        if (loaded) toast('Product DB synced: ' + productDB.length + ' products', 's', 2000);
+      });
     };
   </script>
 </body>
