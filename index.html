@@ -9,13 +9,13 @@
   <!-- EmailJS -->
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script>
-    (function(){
+    (function () {
       emailjs.init({ publicKey: "3dpdgPNKspunHoNdX" });
     })();
     const EJS = {
       serviceId: "service_2c3qd6k",
       verifyTpl: "template_f1fa7v2",
-      resetTpl:  "template_6zswk8g",
+      resetTpl: "template_6zswk8g",
       adminEmail: "murad229564@gmail.com",
       appLink: window.location.href
     };
@@ -34,24 +34,57 @@
         });
         console.log("✅ Verification email sent to", toEmail);
         return true;
-      } catch(e) {
+      } catch (e) {
         console.error("❌ Email send failed:", e);
         return false;
       }
     }
 
+    async function saveResetTokenToFirestore(uid, resetToken, expiry) {
+      try {
+        await _fdb.collection('ji_reset_tokens').doc(uid).set({
+          uid: uid,
+          token: resetToken,
+          exp: expiry,
+          createdAt: new Date().toISOString(),
+          used: false
+        });
+      } catch (e) { console.warn('Reset token save failed:', e); }
+    }
+
+    async function verifyResetTokenFromFirestore(token) {
+      try {
+        const snap = await _fdb.collection('ji_reset_tokens')
+          .where('token', '==', token)
+          .where('used', '==', false)
+          .get();
+        if (snap.empty) return null;
+        const doc = snap.docs[0];
+        const data = doc.data();
+        if (Date.now() > data.exp) return null; // expired
+        return { uid: data.uid, docId: doc.id };
+      } catch (e) { console.warn('Token verify failed:', e); return null; }
+    }
+
+    async function markResetTokenUsed(docId) {
+      try {
+        await _fdb.collection('ji_reset_tokens').doc(docId).update({ used: true });
+      } catch (e) { console.warn('Token mark used failed:', e); }
+    }
+
     // Password Reset mail পাঠানো
-    async function sendPasswordResetEmail(toEmail, toName, tempPassword) {
+    async function sendPasswordResetEmail(toEmail, toName, resetToken) {
+      const resetLink = EJS.appLink + "?resetpwd=" + resetToken + "&uid=" + encodeURIComponent(toName);
       try {
         await emailjs.send(EJS.serviceId, EJS.resetTpl, {
           to_email: toEmail,
           to_name: toName,
-          temp_password: tempPassword,
+          reset_link: resetLink,
           app_link: EJS.appLink
         });
         console.log("✅ Password reset email sent to", toEmail);
         return true;
-      } catch(e) {
+      } catch (e) {
         console.error("❌ Password reset email failed:", e);
         return false;
       }
@@ -65,6 +98,66 @@
       if (token && uid) {
         setTimeout(() => processEmailVerification(token, uid), 2000);
       }
+    }
+
+    // URL থেকে password reset token check করা
+    function checkResetToken() {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('resetpwd');
+      const uid = params.get('uid');
+      if (token && uid) {
+        setTimeout(() => processPasswordReset(token, uid), 2000);
+      }
+    }
+
+    async function processPasswordReset(token, uid) {
+      const users = getUsers();
+      const tokenData = await verifyResetTokenFromFirestore(token);
+      const u = tokenData ? users.find(x => x.uid === tokenData.uid) : null;
+      const _resetDocId = tokenData?.docId || null;
+      if (!u) {
+        window.history.replaceState({}, '', window.location.pathname);
+        showModal('❌ Invalid Link', `
+      <div style="text-align:center;padding:20px;">
+        <div style="font-size:48px;margin-bottom:16px;">❌</div>
+        <p style="font-size:15px;color:#c0392b;font-weight:600;">Reset link invalid বা expired!</p>
+        <p style="font-size:13px;color:#666;margin-top:8px;">নতুন করে Forgot Password request করুন।</p>
+      </div>`, null);
+        document.getElementById('modalOk').textContent = 'OK';
+        document.getElementById('modalOk').onclick = () => closeModal();
+        return;
+      }
+      // New password input modal দেখাও
+      window.history.replaceState({}, '', window.location.pathname);
+      showModal('🔑 Set New Password', `
+    <div style="font-size:13px;color:var(--txt2);margin-bottom:14px;">
+      <strong>${u.name}</strong> এর জন্য নতুন password সেট করুন।
+    </div>
+    <div class="mf" style="margin-bottom:10px;">
+      <label style="font-size:11px;font-weight:700;color:var(--txt2);display:block;margin-bottom:4px;">NEW PASSWORD</label>
+      <input type="password" id="rpNewPwd" placeholder="নতুন password (min 4 characters)"
+        style="width:100%;border:1.5px solid var(--bdr);border-radius:6px;padding:9px 12px;font-size:13.5px;font-family:var(--f);">
+    </div>
+    <div class="mf">
+      <label style="font-size:11px;font-weight:700;color:var(--txt2);display:block;margin-bottom:4px;">CONFIRM PASSWORD</label>
+      <input type="password" id="rpConfirmPwd" placeholder="আবার লিখুন"
+        style="width:100%;border:1.5px solid var(--bdr);border-radius:6px;padding:9px 12px;font-size:13.5px;font-family:var(--f);">
+    </div>
+  `, async () => {
+        const np = document.getElementById('rpNewPwd')?.value;
+        const cp = document.getElementById('rpConfirmPwd')?.value;
+        if (!np || np.length < 4) { toast('Password কমপক্ষে 4 character হতে হবে।', 'e'); return false; }
+        if (np !== cp) { toast('Password দুটো মিলছে না।', 'e'); return false; }
+        u.pwd = btoa(np);
+        u.resetToken = null;
+        u.resetTokenExp = null;
+        await upsertUser(u);
+        if (_resetDocId) await markResetTokenUsed(_resetDocId);
+        addAudit(u.uid, 'PWD_RESET_SELF', 'User reset own password via email link');
+        toast('✅ Password সফলভাবে পরিবর্তন হয়েছে! এখন login করুন।', 's', 5000);
+        return true;
+      });
+      document.getElementById('modalOk').textContent = 'Set Password';
     }
 
     async function processEmailVerification(token, uid) {
@@ -2085,26 +2178,28 @@
               onkeydown="if(event.key==='Enter')doLogin()"><button type="button" class="eye-btn"
               onclick="toggleEye('l_pwd',this)" tabindex="-1">👁</button></div>
         </div>
-        <button class="btn-auth" onclick="doLogin()">Sign In →</button>
-        <div style="text-align:right;margin-top:6px;margin-bottom:2px;"><span onclick="showForgotPwd()"
-            style="font-size:11.5px;color:var(--c1);cursor:pointer;font-weight:600;text-decoration:underline;">Forgot
-            Password?</span></div>
-        <div class="auth-msg" id="loginMsg"></div>
       </div>
-      <div id="fReg" style="display:none">
-        <div class="lgrp"><label>Full Name</label><input type="text" id="r_name" placeholder="Your full name"></div>
-        <div class="lgrp"><label>User ID</label><input type="text" id="r_uid" placeholder="Min 3 characters"></div>
-        <div class="lgrp"><label>Password</label>
-          <div class="pwd-wrap"><input type="password" id="r_pwd" placeholder="Min 4 characters"><button type="button"
-              class="eye-btn" onclick="toggleEye('r_pwd',this)" tabindex="-1">👁</button></div>
-        </div>
-        <div class="lgrp"><label>Branch</label><input type="text" id="r_branch" placeholder="Your branch name"></div>
-        <div class="lgrp"><label>Email <span style="color:#ef4444">*</span></label><input type="email" id="r_email" placeholder="your@email.com (verification link যাবে)"></div>
-        <button class="btn-auth" onclick="doRegister()">Create Account</button>
-        <div class="auth-msg" id="regMsg"></div>
-        <div class="pending-note" id="pendingNote">⏳ Account created! Awaiting admin approval.</div>
-      </div>
+      <button class="btn-auth" onclick="doLogin()">Sign In →</button>
+      <div style="text-align:right;margin-top:6px;margin-bottom:2px;"><span onclick="showForgotPwd()"
+          style="font-size:11.5px;color:var(--c1);cursor:pointer;font-weight:600;text-decoration:underline;">Forgot
+          Password?</span></div>
+      <div class="auth-msg" id="loginMsg"></div>
     </div>
+    <div id="fReg" style="display:none">
+      <div class="lgrp"><label>Full Name</label><input type="text" id="r_name" placeholder="Your full name"></div>
+      <div class="lgrp"><label>User ID</label><input type="text" id="r_uid" placeholder="Min 3 characters"></div>
+      <div class="lgrp"><label>Password</label>
+        <div class="pwd-wrap"><input type="password" id="r_pwd" placeholder="Min 4 characters"><button type="button"
+            class="eye-btn" onclick="toggleEye('r_pwd',this)" tabindex="-1">👁</button></div>
+      </div>
+      <div class="lgrp"><label>Branch</label><input type="text" id="r_branch" placeholder="Your branch name"></div>
+      <div class="lgrp"><label>Email <span style="color:#ef4444">*</span></label><input type="email" id="r_email"
+          placeholder="your@email.com (verification link যাবে)"></div>
+      <button class="btn-auth" onclick="doRegister()">Create Account</button>
+      <div class="auth-msg" id="regMsg"></div>
+      <div class="pending-note" id="pendingNote">⏳ Account created! Awaiting admin approval.</div>
+    </div>
+  </div>
   </div>
 
   <!-- ═══════════ APP ═══════════ -->
@@ -2155,10 +2250,10 @@
           <span id="userLbl">—</span>
           <span class="rtag" id="roleLbl">user</span>
           <div class="udrop" id="udrop">
+            <div class="udrop-item" onclick="openProfileModal()">👤 My Profile</div>
             <div class="udrop-item" onclick="openSettings();closeUD()">⚙ Settings</div>
             <div class="udrop-item admin-tab" id="adminLink" style="display:none" onclick="goPage('admin');closeUD()">👥
               Admin Panel</div>
-            <div class="udrop-item" onclick="openChgPwd();closeUD()">🔑 Change Password</div>
             <div class="udrop-item danger" onclick="doLogout()">↩ Sign Out</div>
           </div>
         </div>
@@ -2357,6 +2452,9 @@
               <input type="text" id="srchTxt" placeholder="Search invoice / customer…" oninput="renderHist()"
                 style="width:210px">
               <input type="date" id="srchDate" onchange="renderHist()" title="Filter by date">
+              <span style="font-size:11px;color:var(--txt3);margin:0 4px;">থেকে</span>
+              <input type="date" id="srchDateEnd" onchange="renderHist()"
+                style="border:1.5px solid var(--bdr);border-radius:var(--r2);padding:5px 8px;font-size:12px;font-family:var(--f);color:var(--txt);background:var(--inp);">
               <select id="srchStatus" onchange="renderHist()" style="width:130px">
                 <option value="">All Invoices</option>
                 <option value="active">Active</option>
@@ -2904,28 +3002,51 @@
 
     function showForgotPwd() {
       showModal('🔑 Forgot Password', `
-        <div style="font-size:13px;color:var(--txt2);margin-bottom:14px;">আপনার <strong>User ID</strong> দিন। Admin আপনার password reset করে দেবে।</div>
-        <div class="mf"><label>User ID</label><input type="text" id="fpUid" placeholder="Your User ID" style="width:100%;border:1.5px solid var(--bdr);border-radius:6px;padding:9px 12px;font-size:13.5px;font-family:var(--f);color:var(--txt);background:var(--inp);"></div>
-        <div style="font-size:11px;color:var(--txt3);margin-top:8px;">⚠ Admin আপনার ID verify করে নতুন password দেবে।</div>
-      `, async () => {
-        const uid = document.getElementById('fpUid')?.value?.trim();
-        if (!uid) { toast('User ID দিন।', 'e'); return false; }
-        const u = getUsers().find(x => x.uid === uid);
-        if (!u) { toast('User ID পাওয়া যায়নি।', 'e'); return false; }
-        if (u.status === 'pending') { toast('Account এখনও approve হয়নি।', 'e'); return false; }
-        // Admin কে notification পাঠাও
+    <div style="font-size:13px;color:var(--txt2);margin-bottom:14px;">
+      Your registered <strong>Email Address</strong> enter করুন।
+      Password reset link আপনার email এ পাঠানো হবে।
+    </div>
+    <div class="mf">
+      <label style="font-size:11px;font-weight:700;color:var(--txt2);display:block;margin-bottom:4px;">EMAIL ADDRESS</label>
+      <input type="email" id="fpEmail" placeholder="Your registered email"
+        style="width:100%;border:1.5px solid var(--bdr);border-radius:6px;padding:9px 12px;font-size:13.5px;font-family:var(--f);color:var(--txt);background:var(--inp);">
+    </div>
+    <div style="font-size:11px;color:var(--txt3);margin-top:8px;">
+      ✉ Link টি ৩০ মিনিট valid থাকবে।
+    </div>
+  `, async () => {
+        const email = document.getElementById('fpEmail')?.value?.trim();
+        if (!email) { toast('Email দিন।', 'e'); return false; }
+        const u = getUsers().find(x => x.email && x.email.toLowerCase() === email.toLowerCase());
+        if (!u) { toast('এই email দিয়ে কোনো account পাওয়া যায়নি।', 'e'); return false; }
+        if (u.status === 'pending') { toast('Account এখনও approve হয়নি। Admin এর সাথে যোগাযোগ করুন।', 'e'); return false; }
+        if (u.status === 'inactive') { toast('Account disabled। Admin এর সাথে যোগাযোগ করুন।', 'e'); return false; }
+        // Reset token তৈরি (৩০ মিনিট valid)
+        const resetToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        const resetExpiry = Date.now() + 30 * 60 * 1000;
+        u.resetToken = resetToken;
+        u.resetTokenExp = resetExpiry;
+        await upsertUser(u);
+        await saveResetTokenToFirestore(u.uid, resetToken, resetExpiry);
+        // Email পাঠাও
+        const sent = await sendPasswordResetEmail(u.email, u.name, resetToken);
+        if (sent) {
+          toast('✅ Reset link আপনার email এ পাঠানো হয়েছে! ৩০ মিনিটের মধ্যে click করুন।', 's', 6000);
+        } else {
+          toast('⚠ Email পাঠানো যায়নি। Admin এর সাথে যোগাযোগ করুন।', 'e', 5000);
+        }
+        // Admin কে in-app notification
         try {
           await _fdb.collection('ji_notifications').add({
             to: 'admin',
             type: 'pwd_reset',
             title: '🔑 Password Reset Request',
-            body: '"' + uid + '" তাদের password ভুলে গেছে। Admin panel → Users থেকে password change করুন।',
+            body: '"' + u.name + '" (ID: ' + u.uid + ') password reset link request করেছে।',
             time: new Date().toISOString(),
             readBy: [],
-            sentBy: uid
+            sentBy: u.uid
           });
         } catch (e) { console.warn('Notif failed', e); }
-        toast('Request পাঠানো হয়েছে। Admin সাথে যোগাযোগ করুন।', 's', 4500);
         return true;
       });
     }
@@ -2960,7 +3081,19 @@
       const newUser = { uid, pwd: btoa(pwd), name, branch, email, role: 'user', status: 'pending', emailVerified: false, verifyToken, created: new Date().toISOString(), pwdHistory: [] };
       await upsertUser(newUser);
       addAudit(uid, 'REGISTER', 'New registration: ' + name + ', branch: ' + branch + ', email: ' + email);
-      // Verification email পাঠানো (admin কেও BCC তে যাবে)
+      // Admin কে in-app notification পাঠাও
+      try {
+        await _fdb.collection('ji_notifications').add({
+          to: 'admin',
+          type: 'new_registration',
+          title: '👤 নতুন Registration',
+          body: '"' + name + '" (ID: ' + uid + ', Branch: ' + (branch || 'N/A') + ') নতুন account খুলেছে। Approval এর জন্য Admin Panel → Users এ যান।',
+          time: new Date().toISOString(),
+          readBy: [],
+          sentBy: uid
+        });
+      } catch (e) { console.warn('Admin notif failed', e); }
+      // Verification email পাঠানো
       const sent = await sendVerificationEmail(email, name, verifyToken);
       if (sent) {
         setMsg('regMsg', '✅ Account created! Verification email sent. Please check your inbox.', 's');
@@ -4330,7 +4463,15 @@
       }
 
       if (srch) all = all.filter(x => (x.invNo || '').toLowerCase().includes(srch) || (x.cName || '').toLowerCase().includes(srch));
-      if (sd) all = all.filter(x => (x.savedAt || '').startsWith(sd));
+      const ed = document.getElementById('srchDateEnd')?.value || '';
+      if (sd && ed) {
+        all = all.filter(x => {
+          const d = (x.savedAt || '').slice(0, 10);
+          return d >= sd && d <= ed;
+        });
+      } else if (sd) {
+        all = all.filter(x => (x.savedAt || '').startsWith(sd));
+      }
 
       const tbody = document.getElementById('histBody');
       const empty = document.getElementById('histEmpty');
@@ -5406,6 +5547,8 @@
 
       // Email verification token check করা
       checkVerifyToken();
+      // Password reset token check করা
+      checkResetToken();
 
       // Auto-login from session
       const sid = DB.g('ji_sess', null);
@@ -5423,7 +5566,126 @@
         if (loaded) toast('Product DB synced: ' + productDB.length + ' products', 's', 2000);
       });
     };
+    /* ══════ এখানে নতুন code বসাবেন ══════ */
+    function openProfileModal() {
+      if (!CU) return;
+      closeUD();
+      document.getElementById('pf_uid').textContent = CU.uid;
+      document.getElementById('pf_branch').textContent = CU.branch || '—';
+      document.getElementById('pf_role').textContent = CU.role === 'admin' ? '🔴 Admin' : '🔵 User';
+      document.getElementById('pf_name').value = CU.name || '';
+      document.getElementById('pf_curpwd').value = '';
+      document.getElementById('pf_newpwd').value = '';
+      document.getElementById('pf_confirmpwd').value = '';
+      document.getElementById('profileDim').style.display = 'block';
+      document.getElementById('profileModal').style.display = 'block';
+    }
+
+    function closeProfileModal() {
+      document.getElementById('profileDim').style.display = 'none';
+      document.getElementById('profileModal').style.display = 'none';
+    }
+
+    async function saveProfileName() {
+      const newName = document.getElementById('pf_name').value.trim();
+      if (!newName) { toast('Name দিন।', 'e'); return; }
+      if (newName === CU.name) { toast('Name একই আছে।', 'w'); return; }
+      CU.name = newName;
+      await upsertUser(CU);
+      addAudit(CU.uid, 'PROFILE_NAME', 'Display name changed to: ' + newName);
+      const chip = document.getElementById('userChip');
+      if (chip) {
+        const spans = chip.querySelectorAll('span');
+        if (spans.length > 0) spans[0].textContent = newName;
+      }
+      toast('✅ Name update হয়েছে!', 's');
+    }
+
+    async function saveProfilePassword() {
+      const curPwd = document.getElementById('pf_curpwd').value;
+      const newPwd = document.getElementById('pf_newpwd').value;
+      const confirmPwd = document.getElementById('pf_confirmpwd').value;
+      if (!curPwd) { toast('Current password দিন।', 'e'); return; }
+      if (CU.pwd !== btoa(curPwd)) { toast('Current password সঠিক নয়।', 'e'); return; }
+      if (!newPwd || newPwd.length < 4) { toast('New password কমপক্ষে 4 character হতে হবে।', 'e'); return; }
+      if (newPwd !== confirmPwd) { toast('নতুন password দুটো মিলছে না।', 'e'); return; }
+      if (curPwd === newPwd) { toast('নতুন password পুরনোটার মতো হতে পারবে না।', 'w'); return; }
+      CU.pwd = btoa(newPwd);
+      await upsertUser(CU);
+      addAudit(CU.uid, 'PROFILE_PWD', 'Password changed by user');
+      document.getElementById('pf_curpwd').value = '';
+      document.getElementById('pf_newpwd').value = '';
+      document.getElementById('pf_confirmpwd').value = '';
+      toast('✅ Password সফলভাবে পরিবর্তন হয়েছে!', 's');
+      closeProfileModal();
+    }
+
   </script>
+
+  <!-- ══════════════ PROFILE MODAL ══════════════ -->
+  <div id="profileDim" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:8000;"
+    onclick="closeProfileModal()"></div>
+  <div id="profileModal"
+    style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;border-radius:12px;padding:28px 28px 22px;width:370px;max-width:95vw;z-index:8001;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div style="font-size:17px;font-weight:800;color:#1a3c5e;">👤 My Profile</div>
+      <button onclick="closeProfileModal()"
+        style="background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;line-height:1;">×</button>
+    </div>
+    <div style="background:#f0f4f8;border-radius:8px;padding:12px 15px;margin-bottom:18px;font-size:13px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+        <span style="color:#475569;font-weight:600;">User ID</span>
+        <span id="pf_uid" style="font-weight:700;color:#1a3c5e;font-family:monospace;"></span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+        <span style="color:#475569;font-weight:600;">Branch</span>
+        <span id="pf_branch" style="font-weight:700;color:#1a3c5e;"></span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span style="color:#475569;font-weight:600;">Role</span>
+        <span id="pf_role" style="font-weight:700;color:#1a3c5e;"></span>
+      </div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label
+        style="font-size:10.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.6px;display:block;margin-bottom:4px;">Display
+        Name</label>
+      <input type="text" id="pf_name" placeholder="Your name"
+        style="width:100%;border:1.5px solid #e2e8f0;border-radius:6px;padding:9px 12px;font-size:13.5px;font-family:Arial,sans-serif;color:#0f172a;background:#f8fafc;">
+    </div>
+    <button onclick="saveProfileName()"
+      style="width:100%;background:#1a3c5e;color:white;border:none;border-radius:6px;padding:10px;font-size:13.5px;font-weight:700;cursor:pointer;margin-bottom:18px;">
+      💾 Save Name
+    </button>
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:18px;">
+    <div style="font-size:13px;font-weight:700;color:#1a3c5e;margin-bottom:12px;">🔒 Change Password</div>
+    <div style="margin-bottom:10px;">
+      <label
+        style="font-size:10.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.6px;display:block;margin-bottom:4px;">Current
+        Password</label>
+      <input type="password" id="pf_curpwd" placeholder="Current password"
+        style="width:100%;border:1.5px solid #e2e8f0;border-radius:6px;padding:9px 12px;font-size:13.5px;font-family:Arial,sans-serif;">
+    </div>
+    <div style="margin-bottom:10px;">
+      <label
+        style="font-size:10.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.6px;display:block;margin-bottom:4px;">New
+        Password</label>
+      <input type="password" id="pf_newpwd" placeholder="New password (min 4 characters)"
+        style="width:100%;border:1.5px solid #e2e8f0;border-radius:6px;padding:9px 12px;font-size:13.5px;font-family:Arial,sans-serif;">
+    </div>
+    <div style="margin-bottom:14px;">
+      <label
+        style="font-size:10.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.6px;display:block;margin-bottom:4px;">Confirm
+        New Password</label>
+      <input type="password" id="pf_confirmpwd" placeholder="Confirm new password"
+        style="width:100%;border:1.5px solid #e2e8f0;border-radius:6px;padding:9px 12px;font-size:13.5px;font-family:Arial,sans-serif;">
+    </div>
+    <button onclick="saveProfilePassword()"
+      style="width:100%;background:#16a34a;color:white;border:none;border-radius:6px;padding:10px;font-size:13.5px;font-weight:700;cursor:pointer;">
+      🔐 Update Password
+    </button>
+  </div>
+
 </body>
 
 </html>
