@@ -6,6 +6,88 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Jamuna ERP — Invoice System</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- EmailJS -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <script>
+    (function(){
+      emailjs.init({ publicKey: "3dpdgPNKspunHoNdX" });
+    })();
+    const EJS = {
+      serviceId: "service_2c3qd6k",
+      verifyTpl: "template_f1fa7v2",
+      resetTpl:  "template_6zswk8g",
+      adminEmail: "murad229564@gmail.com",
+      appLink: window.location.href
+    };
+
+    // Email Verification mail পাঠানো
+    async function sendVerificationEmail(toEmail, toName, verifyToken) {
+      const verifyLink = EJS.appLink + "?verify=" + verifyToken + "&uid=" + encodeURIComponent(toName);
+      try {
+        await emailjs.send(EJS.serviceId, EJS.verifyTpl, {
+          to_email: toEmail,
+          to_name: toName,
+          verify_link: verifyLink,
+          // Admin কেও BCC তে যাবে (template এ BCC set করা আছে)
+          user_name: toName,
+          app_link: EJS.appLink
+        });
+        console.log("✅ Verification email sent to", toEmail);
+        return true;
+      } catch(e) {
+        console.error("❌ Email send failed:", e);
+        return false;
+      }
+    }
+
+    // Password Reset mail পাঠানো
+    async function sendPasswordResetEmail(toEmail, toName, tempPassword) {
+      try {
+        await emailjs.send(EJS.serviceId, EJS.resetTpl, {
+          to_email: toEmail,
+          to_name: toName,
+          temp_password: tempPassword,
+          app_link: EJS.appLink
+        });
+        console.log("✅ Password reset email sent to", toEmail);
+        return true;
+      } catch(e) {
+        console.error("❌ Password reset email failed:", e);
+        return false;
+      }
+    }
+
+    // URL থেকে verify token check করা
+    function checkVerifyToken() {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('verify');
+      const uid = params.get('uid');
+      if (token && uid) {
+        setTimeout(() => processEmailVerification(token, uid), 2000);
+      }
+    }
+
+    async function processEmailVerification(token, uid) {
+      const users = getUsers();
+      const u = users.find(x => x.verifyToken === token);
+      if (u && u.emailVerified !== true) {
+        u.emailVerified = true;
+        await upsertUser(u);
+        // URL clean করা
+        window.history.replaceState({}, '', window.location.pathname);
+        showModal('✅ Email Verified!',
+          `<div style="text-align:center;padding:20px;">
+            <div style="font-size:48px;margin-bottom:16px;">✅</div>
+            <p style="font-size:15px;color:#1a237e;font-weight:600;">Your email has been verified!</p>
+            <p style="font-size:13px;color:#666;margin-top:8px;">Your account is now pending admin approval.<br>You will be able to login once admin approves.</p>
+          </div>`,
+          null
+        );
+        document.getElementById('modalOk').textContent = 'OK';
+        document.getElementById('modalOk').onclick = () => closeModal();
+      }
+    }
+  </script>
   <!-- Firebase compat (non-module, works with regular scripts) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -234,6 +316,35 @@
       margin-top: 10px;
       text-align: center;
       display: none;
+    }
+
+    /* ── Eye Toggle ── */
+    .pwd-wrap {
+      position: relative;
+    }
+
+    .pwd-wrap input {
+      padding-right: 38px !important;
+    }
+
+    .eye-btn {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 4px;
+      font-size: 16px;
+      color: var(--txt3);
+      line-height: 1;
+      display: flex;
+      align-items: center;
+    }
+
+    .eye-btn:hover {
+      color: var(--c1);
     }
 
     /* ═══════════════ APP SHELL ═══════════════ */
@@ -1532,6 +1643,15 @@
       margin-bottom: 12px;
     }
 
+    .mf .pwd-wrap {
+      position: relative;
+    }
+
+    .mf .pwd-wrap input {
+      width: 100%;
+      padding-right: 38px !important;
+    }
+
     .mf label {
       display: block;
       font-size: 10.5px;
@@ -1960,16 +2080,26 @@
       <div id="fLogin">
         <div class="lgrp"><label>User ID</label><input type="text" id="l_uid" placeholder="Your User ID"
             autocomplete="username"></div>
-        <div class="lgrp"><label>Password</label><input type="password" id="l_pwd" placeholder="Password"
-            onkeydown="if(event.key==='Enter')doLogin()"></div>
+        <div class="lgrp"><label>Password</label>
+          <div class="pwd-wrap"><input type="password" id="l_pwd" placeholder="Password"
+              onkeydown="if(event.key==='Enter')doLogin()"><button type="button" class="eye-btn"
+              onclick="toggleEye('l_pwd',this)" tabindex="-1">👁</button></div>
+        </div>
         <button class="btn-auth" onclick="doLogin()">Sign In →</button>
+        <div style="text-align:right;margin-top:6px;margin-bottom:2px;"><span onclick="showForgotPwd()"
+            style="font-size:11.5px;color:var(--c1);cursor:pointer;font-weight:600;text-decoration:underline;">Forgot
+            Password?</span></div>
         <div class="auth-msg" id="loginMsg"></div>
       </div>
       <div id="fReg" style="display:none">
         <div class="lgrp"><label>Full Name</label><input type="text" id="r_name" placeholder="Your full name"></div>
         <div class="lgrp"><label>User ID</label><input type="text" id="r_uid" placeholder="Min 3 characters"></div>
-        <div class="lgrp"><label>Password</label><input type="password" id="r_pwd" placeholder="Min 4 characters"></div>
+        <div class="lgrp"><label>Password</label>
+          <div class="pwd-wrap"><input type="password" id="r_pwd" placeholder="Min 4 characters"><button type="button"
+              class="eye-btn" onclick="toggleEye('r_pwd',this)" tabindex="-1">👁</button></div>
+        </div>
         <div class="lgrp"><label>Branch</label><input type="text" id="r_branch" placeholder="Your branch name"></div>
+        <div class="lgrp"><label>Email <span style="color:#ef4444">*</span></label><input type="email" id="r_email" placeholder="your@email.com (verification link যাবে)"></div>
         <button class="btn-auth" onclick="doRegister()">Create Account</button>
         <div class="auth-msg" id="regMsg"></div>
         <div class="pending-note" id="pendingNote">⏳ Account created! Awaiting admin approval.</div>
@@ -2073,10 +2203,18 @@
             <div class="sb-lbl" style="margin-bottom:8px;">Payment Summary</div>
             <div class="sum-row" style="padding:4px 0;"><span class="sum-lbl">Total MRP w/ VAT</span><span
                 class="sum-val" id="totalMRP">0.00</span></div>
-            <div class="sum-row" style="padding:4px 0;"><span class="sum-lbl">Discount (৳)</span><input type="number"
-                class="sum-inp" id="discount" min="0" value="0" inputmode="numeric"
-                onkeypress="return /[0-9.]/.test(event.key)" oninput="calc()"
-                style="width:75px;padding:3px 6px;font-size:12px;"></div>
+            <div class="sum-row" style="padding:4px 0;flex-direction:column;align-items:stretch;gap:3px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span class="sum-lbl">Discount (৳)</span>
+                <input type="number" class="sum-inp" id="discount" min="0" value="0" inputmode="numeric"
+                  onkeypress="return /[0-9.]/.test(event.key)" oninput="calc()"
+                  style="width:75px;padding:3px 6px;font-size:12px;">
+              </div>
+              <div id="discountErr"
+                style="display:none;font-size:10px;color:var(--cr);font-weight:700;text-align:right;">
+                ⚠ Discount, Total MRP এর বেশি হতে পারবে না!
+              </div>
+            </div>
             <div class="sum-row" style="padding:4px 0;"><span class="sum-lbl">Discounted Price</span><span
                 class="sum-val" id="discPrice">0.00</span></div>
             <div class="sum-row" style="padding:4px 0;"><span class="sum-lbl">Due Amount (৳)</span><input type="number"
@@ -2438,6 +2576,18 @@
       <div class="sp-g"><label>Last Invoice Number</label><input id="s_lastno" type="number" placeholder="123735"></div>
       <div class="sp-g"><label>Approved By / Watermark Name</label><input id="s_approved" placeholder="Murad Hossain">
       </div>
+      <div class="sp-sec">Security</div>
+      <div class="sp-g">
+        <label>Auto Logout (idle minutes)</label>
+        <select id="s_timeout" onchange="updateTimeoutSetting()"
+          style="border:1.5px solid var(--bdr);border-radius:var(--r2);padding:6px 8px;font-size:13px;font-family:var(--f);background:var(--inp);width:100%;">
+          <option value="15">15 minutes</option>
+          <option value="30" selected>30 minutes</option>
+          <option value="60">60 minutes</option>
+          <option value="120">2 hours</option>
+          <option value="0">Never (not recommended)</option>
+        </select>
+      </div>
     </div>
     <div class="sp-ft">
       <button class="sp-save" onclick="saveSettings()">💾 Save Settings</button>
@@ -2725,6 +2875,14 @@
     }
 
     /* ═══════════════════════════════════════════
+   SESSION TIMEOUT CONFIG
+═══════════════════════════════════════════ */
+    let SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+    let SESSION_WARN_MS = 25 * 60 * 1000;
+    let _sessionTimer = null;
+    let _sessionWarnTimer = null;
+    let _sessionWarnShown = false;
+    /* ═══════════════════════════════════════════
        AUTH
     ═══════════════════════════════════════════ */
     let CU = null;
@@ -2735,6 +2893,42 @@
       document.getElementById('tReg').classList.toggle('on', t === 'reg');
     }
     function setMsg(id, txt, cls) { const el = document.getElementById(id); el.textContent = txt; el.className = 'auth-msg ' + (cls || ''); }
+
+    function toggleEye(inputId, btn) {
+      const inp = document.getElementById(inputId);
+      if (!inp) return;
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      btn.textContent = show ? '🙈' : '👁';
+    }
+
+    function showForgotPwd() {
+      showModal('🔑 Forgot Password', `
+        <div style="font-size:13px;color:var(--txt2);margin-bottom:14px;">আপনার <strong>User ID</strong> দিন। Admin আপনার password reset করে দেবে।</div>
+        <div class="mf"><label>User ID</label><input type="text" id="fpUid" placeholder="Your User ID" style="width:100%;border:1.5px solid var(--bdr);border-radius:6px;padding:9px 12px;font-size:13.5px;font-family:var(--f);color:var(--txt);background:var(--inp);"></div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:8px;">⚠ Admin আপনার ID verify করে নতুন password দেবে।</div>
+      `, async () => {
+        const uid = document.getElementById('fpUid')?.value?.trim();
+        if (!uid) { toast('User ID দিন।', 'e'); return false; }
+        const u = getUsers().find(x => x.uid === uid);
+        if (!u) { toast('User ID পাওয়া যায়নি।', 'e'); return false; }
+        if (u.status === 'pending') { toast('Account এখনও approve হয়নি।', 'e'); return false; }
+        // Admin কে notification পাঠাও
+        try {
+          await _fdb.collection('ji_notifications').add({
+            to: 'admin',
+            type: 'pwd_reset',
+            title: '🔑 Password Reset Request',
+            body: '"' + uid + '" তাদের password ভুলে গেছে। Admin panel → Users থেকে password change করুন।',
+            time: new Date().toISOString(),
+            readBy: [],
+            sentBy: uid
+          });
+        } catch (e) { console.warn('Notif failed', e); }
+        toast('Request পাঠানো হয়েছে। Admin সাথে যোগাযোগ করুন।', 's', 4500);
+        return true;
+      });
+    }
 
     async function doLogin() {
       const uid = document.getElementById('l_uid').value.trim();
@@ -2754,26 +2948,41 @@
       const uid = document.getElementById('r_uid').value.trim();
       const pwd = document.getElementById('r_pwd').value;
       const branch = document.getElementById('r_branch').value.trim();
-      if (!name || !uid || !pwd) { setMsg('regMsg', 'All fields required.', 'e'); return; }
+      const email = document.getElementById('r_email').value.trim();
+      if (!name || !uid || !pwd || !email) { setMsg('regMsg', 'All fields required (including email).', 'e'); return; }
       if (uid.length < 3) { setMsg('regMsg', 'User ID ≥ 3 chars.', 'e'); return; }
       if (pwd.length < 4) { setMsg('regMsg', 'Password ≥ 4 chars.', 'e'); return; }
+      if (!email.includes('@')) { setMsg('regMsg', 'Valid email required.', 'e'); return; }
       if (getUsers().find(x => x.uid === uid)) { setMsg('regMsg', 'User ID already taken.', 'e'); return; }
-      setMsg('regMsg', 'Creating account...', '');
-      const newUser = { uid, pwd: btoa(pwd), name, branch, role: 'user', status: 'pending', created: new Date().toISOString(), pwdHistory: [] };
+      setMsg('regMsg', '⏳ Creating account & sending verification email...', '');
+      // Unique verify token তৈরি
+      const verifyToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      const newUser = { uid, pwd: btoa(pwd), name, branch, email, role: 'user', status: 'pending', emailVerified: false, verifyToken, created: new Date().toISOString(), pwdHistory: [] };
       await upsertUser(newUser);
-      addAudit(uid, 'REGISTER', 'New registration: ' + name + ', branch: ' + branch);
-      setMsg('regMsg', 'Account created!', 's');
+      addAudit(uid, 'REGISTER', 'New registration: ' + name + ', branch: ' + branch + ', email: ' + email);
+      // Verification email পাঠানো (admin কেও BCC তে যাবে)
+      const sent = await sendVerificationEmail(email, name, verifyToken);
+      if (sent) {
+        setMsg('regMsg', '✅ Account created! Verification email sent. Please check your inbox.', 's');
+      } else {
+        setMsg('regMsg', '✅ Account created! (Email send failed — contact admin)', 's');
+      }
       document.getElementById('pendingNote').style.display = 'block';
-      ['r_name', 'r_uid', 'r_pwd', 'r_branch'].forEach(id => document.getElementById(id).value = '');
+      ['r_name', 'r_uid', 'r_pwd', 'r_branch', 'r_email'].forEach(id => document.getElementById(id).value = '');
     }
 
     function doLogout() {
       addAudit(CU?.uid || '?', 'LOGOUT', 'User signed out');
-      CU = null; DB.d('ji_sess');
+      clearSessionTimers();
+      closeSessionWarning();
+      CU = null;
+      stopNotifListener();
+      DB.d('ji_sess');
       document.getElementById('app').style.display = 'none';
       document.getElementById('loginWrap').style.display = 'flex';
       setMsg('loginMsg', '', '');
-      document.getElementById('l_uid').value = ''; document.getElementById('l_pwd').value = '';
+      document.getElementById('l_uid').value = '';
+      document.getElementById('l_pwd').value = '';
     }
 
     async function launchApp() {
@@ -2814,7 +3023,7 @@
         const label = result.source === 'personal' ? 'Personal DB' : 'Admin Master DB';
         toast('Product DB loaded: ' + productDB.length + ' products (' + label + ')', 's', 2500);
       });
-      checkNotifBadge(); // login এর পরে unread count দেখাও
+      startNotifListener(); // realtime notification listener চালু করো
       // Import button label update
       const importLabel = document.getElementById('importExcelLabel');
       if (importLabel) {
@@ -2822,6 +3031,16 @@
           ? 'Import DB (Master)'
           : 'Import DB';
       }
+      // Saved timeout setting load করো
+      const savedTimeout = parseInt(localStorage.getItem('inv_timeout') || '30');
+      if (savedTimeout > 0) {
+        SESSION_TIMEOUT_MS = savedTimeout * 60 * 1000;
+        SESSION_WARN_MS = Math.max((savedTimeout - 5), 1) * 60 * 1000;
+        const sel = document.getElementById('s_timeout');
+        if (sel) sel.value = savedTimeout;
+      }
+      startSessionTimer();
+      initActivityTracking();
       rowId = 0; addRow(); calc(); goPage('invoice');
     }
 
@@ -2994,9 +3213,9 @@
     ═══════════════════════════════════════════ */
     function openChgPwd() {
       showModal('🔑 Change Password', `
-    <div class="mf"><label>Current Password</label><input type="password" id="cpOld" placeholder="Current password"></div>
-    <div class="mf"><label>New Password</label><input type="password" id="cpNew" placeholder="New password (min 4 chars)"></div>
-    <div class="mf"><label>Confirm New Password</label><input type="password" id="cpConf" placeholder="Repeat new password"></div>
+    <div class="mf"><label>Current Password</label><div class="pwd-wrap"><input type="password" id="cpOld" placeholder="Current password"><button type="button" class="eye-btn" onclick="toggleEye('cpOld',this)" tabindex="-1">👁</button></div></div>
+    <div class="mf"><label>New Password</label><div class="pwd-wrap"><input type="password" id="cpNew" placeholder="New password (min 4 chars)"><button type="button" class="eye-btn" onclick="toggleEye('cpNew',this)" tabindex="-1">👁</button></div></div>
+    <div class="mf"><label>Confirm New Password</label><div class="pwd-wrap"><input type="password" id="cpConf" placeholder="Repeat new password"><button type="button" class="eye-btn" onclick="toggleEye('cpConf',this)" tabindex="-1">👁</button></div></div>
   `, async () => {
         const old = document.getElementById('cpOld').value;
         const nw = document.getElementById('cpNew').value;
@@ -3478,7 +3697,20 @@
     function calc() {
       const items = getRows();
       const mrp = items.reduce((s, i) => s + i.total, 0);
-      const disc = parseFloat(document.getElementById('discount').value) || 0;
+      let disc = parseFloat(document.getElementById('discount').value) || 0;
+
+      // Discount validation
+      const discInp = document.getElementById('discount');
+      const discErr = document.getElementById('discountErr');
+      if (disc > mrp && mrp > 0) {
+        discInp.style.borderColor = 'var(--cr)';
+        if (discErr) discErr.style.display = 'block';
+        disc = mrp; // cap করে দাও যাতে negative না হয়
+      } else {
+        discInp.style.borderColor = '';
+        if (discErr) discErr.style.display = 'none';
+      }
+
       const discP = Math.max(0, mrp - disc);
       const due = parseFloat(document.getElementById('dueAmt').value) || 0;
       const paid = Math.max(0, discP - due);
@@ -4193,7 +4425,11 @@
     function reprint(invNo) {
       const iv = getInvs().find(x => x.invNo === invNo);
       if (!iv) { toast('Not found.', 'e'); return; }
-      renderInvoiceHTML(iv); document.getElementById('pvDim').classList.add('on');
+      // _wasNew ও _wasEdit false রাখো — reprint এ invoice number bump হবে না
+      document.getElementById('pvDim')._wasNew = false;
+      document.getElementById('pvDim')._wasEdit = false;
+      renderInvoiceHTML(iv);
+      document.getElementById('pvDim').classList.add('on');
     }
     /* ═══════════════════════════════════════════
    INVOICE EDIT / MODIFY
@@ -4401,12 +4637,73 @@
       if (!all && CU?.role !== 'admin') invs = invs.filter(x => x.savedBy === CU?.uid && !x.deleted);
       else if (!all) invs = invs.filter(x => !x.deleted);
       if (!invs.length) { toast('No invoices.', 'w'); return; }
-      const rows = [['Invoice No', 'Date', 'Customer', 'Mobile', 'Address', 'Items', 'Total MRP', 'Discount', 'Paid', 'Due', 'User', 'Saved At']];
-      invs.forEach(iv => rows.push([iv.invNo, iv.invDate, iv.cName, iv.cMob, iv.cAddr, (iv.items || []).length, iv.mrp, iv.disc, iv.paid, iv.due, iv.savedBy, iv.savedAt]));
+
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Invoices');
-      XLSX.writeFile(wb, 'Invoice_History_' + new Date().toISOString().slice(0, 10) + '.xlsx');
-      toast('Exported!', 's');
+
+      // ── Sheet 1: Invoice Summary ──
+      const summaryRows = [[
+        'Invoice No', 'Date', 'Customer Name', 'Mobile', 'Address', 'Email',
+        'Invoice Type', 'Customer Type', 'Total Items',
+        'Total MRP (৳)', 'Discount (৳)', 'Discounted Price (৳)', 'Due Amount (৳)', 'Paid Amount (৳)',
+        'Saved By', 'Saved At'
+      ]];
+      invs.forEach(iv => summaryRows.push([
+        iv.invNo,
+        iv.invDate,
+        iv.cName,
+        iv.cMob,
+        iv.cAddr || '',
+        iv.cEmail || '',
+        iv.invType || '',
+        iv.custType || '',
+        (iv.items || []).length,
+        Number(iv.mrp || 0).toFixed(2),
+        Number(iv.disc || 0).toFixed(2),
+        Number(iv.discP || 0).toFixed(2),
+        Number(iv.due || 0).toFixed(2),
+        Number(iv.paid || 0).toFixed(2),
+        iv.savedBy,
+        (iv.savedAt || '').slice(0, 16).replace('T', ' ')
+      ]));
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+      wsSummary['!cols'] = [
+        { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 14 }, { wch: 24 }, { wch: 22 },
+        { wch: 12 }, { wch: 18 }, { wch: 10 },
+        { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 },
+        { wch: 14 }, { wch: 18 }
+      ];
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Invoice Summary');
+
+      // ── Sheet 2: Item Details ──
+      const itemRows = [[
+        'Invoice No', 'Date', 'Customer Name', 'Mobile',
+        'SL', 'Product Name', 'Barcode', 'Qty', 'Unit Price (৳)', 'Total (৳)'
+      ]];
+      invs.forEach(iv => {
+        (iv.items || []).forEach((it, idx) => {
+          itemRows.push([
+            iv.invNo,
+            iv.invDate,
+            iv.cName,
+            iv.cMob,
+            idx + 1,
+            it.name || '',
+            it.barcode || '',
+            it.unit || 0,
+            Number(it.price || 0).toFixed(2),
+            Number(it.total || 0).toFixed(2)
+          ]);
+        });
+      });
+      const wsItems = XLSX.utils.aoa_to_sheet(itemRows);
+      wsItems['!cols'] = [
+        { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 14 },
+        { wch: 5 }, { wch: 30 }, { wch: 26 }, { wch: 6 }, { wch: 14 }, { wch: 12 }
+      ];
+      XLSX.utils.book_append_sheet(wb, wsItems, 'Item Details');
+
+      XLSX.writeFile(wb, 'Invoice_Export_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+      toast('Exported! 2 sheets — Summary & Item Details', 's', 4000);
     }
 
     function clearHist() {
@@ -4704,8 +5001,8 @@
 
     function adminChgPwd(uid) {
       showModal('🔑 Change Password for ' + uid, `
-    <div class="mf"><label>New Password</label><input type="password" id="adNewPwd" placeholder="New password"></div>
-    <div class="mf"><label>Confirm</label><input type="password" id="adConfPwd" placeholder="Repeat"></div>
+    <div class="mf"><label>New Password</label><div class="pwd-wrap"><input type="password" id="adNewPwd" placeholder="New password"><button type="button" class="eye-btn" onclick="toggleEye('adNewPwd',this)" tabindex="-1">👁</button></div></div>
+    <div class="mf"><label>Confirm</label><div class="pwd-wrap"><input type="password" id="adConfPwd" placeholder="Repeat"><button type="button" class="eye-btn" onclick="toggleEye('adConfPwd',this)" tabindex="-1">👁</button></div></div>
   `, async () => {
         const nw = document.getElementById('adNewPwd').value;
         const cf = document.getElementById('adConfPwd').value;
@@ -4719,7 +5016,14 @@
         u.pwd = btoa(nw);
         await upsertUser(u);
         addAudit(CU.uid, 'ADMIN_PWD_CHANGE', 'Admin changed password for ' + uid);
-        toast('Password changed for ' + uid, 's'); return true;
+        // User এর email এ notification পাঠানো
+        if (u.email) {
+          await sendPasswordResetEmail(u.email, u.name || u.uid, nw);
+          toast('Password changed & email sent to ' + u.email, 's');
+        } else {
+          toast('Password changed for ' + uid, 's');
+        }
+        return true;
       });
     }
 
@@ -4730,12 +5034,13 @@
     // Firestore থেকে notifications load করো
     async function loadNotifications() {
       try {
+        // Composite index এড়াতে — শুধু orderBy দিয়ে সব আনো, তারপর JS এ filter করো
         const snap = await _fdb.collection('ji_notifications')
-          .where('to', 'in', [CU.uid, 'all'])
           .orderBy('time', 'desc')
-          .limit(50)
+          .limit(100)
           .get();
-        return snap.docs.map(d => ({ ...d.data(), _id: d.id }));
+        const all = snap.docs.map(d => ({ ...d.data(), _id: d.id }));
+        return all.filter(n => n.to === CU.uid || n.to === 'all');
       } catch (e) { console.warn('Notif load failed', e); return []; }
     }
 
@@ -4757,6 +5062,40 @@
     function closeNotifications() {
       document.getElementById('notifPanel').style.display = 'none';
       document.getElementById('notifDim').style.display = 'none';
+    }
+
+    // Realtime listener থেকে data দিয়ে render করো (re-fetch ছাড়া)
+    function _renderNotifFromData(notifs) {
+      const list = document.getElementById('notifList');
+      const empty = document.getElementById('notifEmpty');
+      if (!list) return;
+      if (!notifs.length) {
+        list.innerHTML = '';
+        if (empty) empty.style.display = 'block';
+        updateNotifBadge(0);
+        return;
+      }
+      if (empty) empty.style.display = 'none';
+      const unread = notifs.filter(n => !n.readBy?.includes(CU.uid));
+      updateNotifBadge(unread.length);
+      list.innerHTML = notifs.map(n => {
+        const isUnread = !n.readBy?.includes(CU.uid);
+        const icon = {
+          'broadcast': '📢', 'delete_approved': '✅', 'delete_rejected': '❌',
+          'restore': '↩', 'system': 'ℹ', 'pwd_reset': '🔑', 'info': '📋'
+        }[n.type] || '🔔';
+        return `<div onclick="readNotif('${n._id}',this)" style="padding:11px 14px;border-bottom:1px solid var(--bdr);cursor:pointer;background:${isUnread ? '#eff6ff' : 'white'};transition:background .15s;">
+          <div style="display:flex;align-items:flex-start;gap:8px;">
+            <span style="font-size:17px;flex-shrink:0;">${icon}</span>
+            <div style="flex:1;">
+              <div style="font-size:12.5px;font-weight:${isUnread ? '700' : '500'};color:var(--txt);line-height:1.4;">${n.title || 'Notification'}</div>
+              <div style="font-size:11.5px;color:var(--txt2);margin-top:2px;line-height:1.4;">${n.body || ''}</div>
+              <div style="font-size:10.5px;color:var(--txt3);margin-top:4px;">${(n.time || '').slice(0, 16).replace('T', ' ')}</div>
+            </div>
+            ${isUnread ? '<span style="width:7px;height:7px;background:var(--c1);border-radius:50%;flex-shrink:0;margin-top:4px;"></span>' : ''}
+          </div>
+        </div>`;
+      }).join('');
     }
 
     async function renderNotifications() {
@@ -4783,7 +5122,9 @@
           'delete_approved': '✅',
           'delete_rejected': '❌',
           'restore': '↩',
-          'system': 'ℹ'
+          'system': 'ℹ',
+          'pwd_reset': '🔑',
+          'info': '📋'
         }[n.type] || '🔔';
         return `
       <div onclick="readNotif('${n._id}',this)" style="padding:11px 14px;border-bottom:1px solid var(--bdr);cursor:pointer;background:${isUnread ? '#eff6ff' : 'white'};transition:background .15s;">
@@ -4867,11 +5208,162 @@
     }
 
     // Login এর পরে badge check করো
+    let _notifUnsub = null; // realtime listener reference
+
     async function checkNotifBadge() {
       try {
         const notifs = await loadNotifications();
         updateNotifBadge(notifs.filter(n => !n.readBy?.includes(CU.uid)).length);
       } catch (e) { }
+    }
+
+    function startNotifListener() {
+      // আগের listener বন্ধ করো
+      if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; }
+      try {
+        _notifUnsub = _fdb.collection('ji_notifications')
+          .orderBy('time', 'desc')
+          .limit(50)
+          .onSnapshot(snap => {
+            if (!CU) return;
+            const all = snap.docs.map(d => ({ ...d.data(), _id: d.id }));
+            // আমার জন্য যেগুলো (নিজের uid বা 'all')
+            const mine = all.filter(n => n.to === CU.uid || n.to === 'all');
+            const unread = mine.filter(n => !n.readBy?.includes(CU.uid));
+            updateNotifBadge(unread.length);
+            // Panel খোলা থাকলে auto-refresh করো
+            if (document.getElementById('notifPanel')?.style.display === 'flex') {
+              _renderNotifFromData(mine);
+            }
+          }, err => {
+            console.warn('Notif listener error:', err);
+            // Fallback: polling every 30s
+            _notifPoller();
+          });
+      } catch (e) {
+        console.warn('Could not start notif listener:', e);
+        _notifPoller();
+      }
+    }
+
+    let _pollerTimer = null;
+    function _notifPoller() {
+      if (_pollerTimer) return; // already running
+      _pollerTimer = setInterval(async () => {
+        if (!CU) { clearInterval(_pollerTimer); _pollerTimer = null; return; }
+        await checkNotifBadge();
+      }, 30000); // 30 সেকেন্ড পরপর check
+    }
+
+    function stopNotifListener() {
+      if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; }
+      if (_pollerTimer) { clearInterval(_pollerTimer); _pollerTimer = null; }
+    }
+
+    /* ═══════════════════════════════════════════
+   SESSION TIMEOUT
+═══════════════════════════════════════════ */
+    function startSessionTimer() {
+      clearSessionTimers();
+      _sessionWarnShown = false;
+
+      // 25 মিনিটে warning
+      _sessionWarnTimer = setTimeout(() => {
+        if (!CU) return;
+        _sessionWarnShown = true;
+        showSessionWarning();
+      }, SESSION_WARN_MS);
+
+      // 30 মিনিটে auto logout
+      _sessionTimer = setTimeout(() => {
+        if (!CU) return;
+        closeSessionWarning();
+        addAudit(CU?.uid || '?', 'AUTO_LOGOUT', 'Session timeout after 30 minutes idle');
+        toast('Session expired. Logging out...', 'w', 2000);
+        setTimeout(() => doLogout(), 2000);
+      }, SESSION_TIMEOUT_MS);
+    }
+
+    function resetSessionTimer() {
+      if (!CU) return; // Login না থাকলে reset করব না
+      startSessionTimer();
+      // Warning দেখানো থাকলে বন্ধ করো
+      if (_sessionWarnShown) {
+        closeSessionWarning();
+        _sessionWarnShown = false;
+      }
+    }
+
+    function clearSessionTimers() {
+      if (_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
+      if (_sessionWarnTimer) { clearTimeout(_sessionWarnTimer); _sessionWarnTimer = null; }
+    }
+
+    function showSessionWarning() {
+      // আগের warning থাকলে সরাও
+      document.getElementById('sessionWarnBox')?.remove();
+      const box = document.createElement('div');
+      box.id = 'sessionWarnBox';
+      box.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a3c5e;color:white;border-radius:10px;padding:14px 20px;box-shadow:0 8px 32px rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;gap:14px;min-width:320px;max-width:420px;';
+      box.innerHTML = `
+    <span style="font-size:22px;">⏱</span>
+    <div style="flex:1;">
+      <div style="font-size:13px;font-weight:800;margin-bottom:3px;">Session Timeout Warning</div>
+      <div style="font-size:12px;opacity:.85;" id="sessionCountdown">5 মিনিটে auto logout হবে।</div>
+    </div>
+    <button onclick="resetSessionTimer()" style="background:var(--ca);color:#1a1a1a;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:var(--f);white-space:nowrap;">
+      Stay Logged In
+    </button>
+  `;
+      document.body.appendChild(box);
+
+      // Countdown timer
+      let remaining = 5 * 60;
+      const countEl = document.getElementById('sessionCountdown');
+      const countInterval = setInterval(() => {
+        remaining--;
+        if (remaining <= 0 || !document.getElementById('sessionWarnBox')) {
+          clearInterval(countInterval); return;
+        }
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        if (countEl) countEl.textContent = m > 0
+          ? m + ' মিনিট ' + s + ' সেকেন্ডে auto logout হবে।'
+          : s + ' সেকেন্ডে auto logout হবে।';
+      }, 1000);
+    }
+
+    function closeSessionWarning() {
+      document.getElementById('sessionWarnBox')?.remove();
+    }
+
+    // User activity track করো
+    function initActivityTracking() {
+      const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+      let _throttle = null;
+      events.forEach(ev => {
+        document.addEventListener(ev, () => {
+          if (!CU) return;
+          // Throttle — প্রতি 30 সেকেন্ডে একবার reset
+          if (_throttle) return;
+          _throttle = setTimeout(() => { _throttle = null; }, 30000);
+          resetSessionTimer();
+        }, { passive: true });
+      });
+    }
+
+    function updateTimeoutSetting() {
+      const val = parseInt(document.getElementById('s_timeout')?.value || '30');
+      localStorage.setItem('inv_timeout', val);
+      if (val === 0) {
+        clearSessionTimers();
+        toast('Auto logout disabled.', 'w');
+        return;
+      }
+      SESSION_TIMEOUT_MS = val * 60 * 1000;
+      SESSION_WARN_MS = Math.max((val - 5), 1) * 60 * 1000;
+      startSessionTimer();
+      toast('Auto logout set to ' + val + ' minutes.', 's');
     }
 
     /* ═══════════════════════════════════════════
@@ -4911,6 +5403,9 @@
       }
 
       loadDiv.remove();
+
+      // Email verification token check করা
+      checkVerifyToken();
 
       // Auto-login from session
       const sid = DB.g('ji_sess', null);
