@@ -3188,7 +3188,8 @@
 
       if (u.status === 'pending') { setMsg('loginMsg', '⏳ Admin approval এর অপেক্ষায়।', 'e'); return; }
       if (u.status === 'inactive') { setMsg('loginMsg', '🚫 Account disabled। Admin এর সাথে যোগাযোগ করুন।', 'e'); return; }
-      if (!u.emailVerified) { setMsg('loginMsg', '📧 Email verify করুন। Inbox চেক করুন।', 'e'); return; }
+      // emailVerified check — admin ও পুরনো user (field নেই) কে bypass করো
+      if (u.role !== 'admin' && u.email && u.emailVerified === false) { setMsg('loginMsg', '📧 Email verify করুন। Inbox চেক করুন।', 'e'); return; }
       CU = u; sessionStorage.setItem('ji_sess', u.uid);
       addAudit(u.uid, 'LOGIN', 'User signed in');
       launchApp();
